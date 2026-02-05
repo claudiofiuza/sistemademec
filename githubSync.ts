@@ -6,11 +6,12 @@ export interface SyncConfig {
   path: string;
 }
 
-// Configurações globais embutidas para evitar configuração manual
+// Configurações globais embutidas para sincronização com o repositório do usuário claudiofiuza
 export const CLOUD_CONFIG: SyncConfig = {
-  token: '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',
-  owner: 'claudiofiuza', // AJUSTE: Coloque aqui o seu nome de usuário do GitHub
-  repo: 'sc-pro-db',      // AJUSTE: Coloque aqui o nome do repositório privado que você criou
+  // Token para acesso ao repositório privado lsc-pro-db
+  token: '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',
+  owner: 'claudiofiuza', 
+  repo: 'lsc-pro-db',    
   path: 'database.json'
 };
 
@@ -22,7 +23,10 @@ export const syncToCloud = async (data: any) => {
   
   try {
     const getRes = await fetch(url, {
-      headers: { Authorization: `token ${token}` }
+      headers: { 
+        Authorization: `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
     });
     
     let sha = '';
@@ -37,9 +41,10 @@ export const syncToCloud = async (data: any) => {
       headers: {
         Authorization: `token ${token}`,
         'Content-Type': 'application/json',
+        'Accept': 'application/vnd.github.v3+json'
       },
       body: JSON.stringify({
-        message: 'Sync: Workshop Database Update',
+        message: 'Sync: LSC Pro Database Update',
         content,
         sha: sha || undefined
       })
@@ -56,11 +61,15 @@ export const fetchFromCloud = async () => {
   const { token, owner, repo, path } = CLOUD_CONFIG;
   if (!token || owner === 'seu-usuario') return null;
 
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
+  // Adicionamos nocache para garantir que sempre pegamos a versão mais recente do banco de dados no boot
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?nocache=${Date.now()}`;
   
   try {
     const res = await fetch(url, {
-      headers: { Authorization: `token ${token}` }
+      headers: { 
+        Authorization: `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json'
+      }
     });
     
     if (!res.ok) return null;
