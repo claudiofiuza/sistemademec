@@ -8,9 +8,9 @@ export interface SyncConfig {
 
 // Configurações globais embutidas para evitar configuração manual
 export const CLOUD_CONFIG: SyncConfig = {
-  token: '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',
-  owner: 'PandaRP-Oficial', // AJUSTE: Coloque aqui o seu nome de usuário do GitHub
-  repo: 'lsc-database',      // AJUSTE: Coloque aqui o nome do repositório privado que você criou
+  token: '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',
+  owner: 'claudiofiuza', // AJUSTE: Coloque aqui o seu nome de usuário do GitHub
+  repo: 'sc-pro-db',      // AJUSTE: Coloque aqui o nome do repositório privado que você criou
   path: 'database.json'
 };
 
