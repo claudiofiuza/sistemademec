@@ -13,7 +13,8 @@ interface HRProps {
 const formatDuration = (ms: number) => {
   const hours = Math.floor(ms / (1000 * 60 * 60));
   const minutes = Math.floor((ms / (1000 * 60)) % 60);
-  return `${hours}h ${minutes}m`;
+  const seconds = Math.floor((ms / 1000) % 60);
+  return `${hours}h ${minutes}m ${seconds}s`;
 };
 
 const calculateSessionTime = (session: WorkSession, currentNow: number) => {
@@ -74,6 +75,43 @@ const HumanResources: React.FC<HRProps> = ({ sessions, onUpdateSessions, users, 
     }
   }, [sessions, onUpdateSessions]);
 
+  const handleRemotePause = (session: WorkSession) => {
+    const updated = {
+      ...session,
+      status: 'paused' as const,
+      pauses: [...session.pauses, { start: Date.now() }]
+    };
+    onUpdateSessions(sessions.map(s => s.id === session.id ? updated : s));
+  };
+
+  const handleRemoteResume = (session: WorkSession) => {
+    const updatedPauses = [...session.pauses];
+    const lastPause = updatedPauses[updatedPauses.length - 1];
+    if (lastPause) lastPause.end = Date.now();
+    const updated = {
+      ...session,
+      status: 'active' as const,
+      pauses: updatedPauses
+    };
+    onUpdateSessions(sessions.map(s => s.id === session.id ? updated : s));
+  };
+
+  const handleRemoteFinalize = (session: WorkSession) => {
+    if (!window.confirm(`Deseja forçar o encerramento do turno de ${session.mechanicName}?`)) return;
+    const updatedPauses = [...session.pauses];
+    if (session.status === 'paused') {
+      const lastPause = updatedPauses[updatedPauses.length - 1];
+      if (lastPause) lastPause.end = Date.now();
+    }
+    const updated = {
+      ...session,
+      status: 'completed' as const,
+      endTime: Date.now(),
+      pauses: updatedPauses
+    };
+    onUpdateSessions(sessions.map(s => s.id === session.id ? updated : s));
+  };
+
   const handleSettleTax = (userId: string) => {
     if (window.confirm("Confirmar pagamento de imposto e zerar saldo?")) {
       setUsers(prev => prev.map(u => u.id === userId ? { ...u, pendingTax: 0 } : u));
@@ -129,10 +167,10 @@ const HumanResources: React.FC<HRProps> = ({ sessions, onUpdateSessions, users, 
                     <h4 className="font-bold text-white">{m.name}</h4>
                     <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">{m.username}</p>
                   </div>
-                  {m.activeSession && <span className="ml-auto w-2 h-2 rounded-full bg-primary animate-pulse shadow-[0_0_8px_var(--primary-color)]"></span>}
+                  {m.activeSession && <span className={`ml-auto w-2 h-2 rounded-full ${m.activeSession.status === 'active' ? 'bg-primary animate-pulse shadow-[0_0_8px_var(--primary-color)]' : 'bg-yellow-500 shadow-[0_0_8px_rgba(234,179,8,0.5)]'}`}></span>}
                 </div>
                 <div className="flex justify-between border-t border-slate-800/50 pt-4">
-                  <span className="text-[10px] font-black text-slate-500 uppercase">Tempo Total</span>
+                  <span className="text-[10px] font-black text-slate-500 uppercase">Tempo Total ({filterPeriod})</span>
                   <span className="text-sm font-mono text-white font-bold">{formatDuration(m.totalTime)}</span>
                 </div>
               </div>
@@ -163,9 +201,9 @@ const HumanResources: React.FC<HRProps> = ({ sessions, onUpdateSessions, users, 
                         </button>
                       </th>
                       <th className="px-6 py-5">Mecânico</th>
-                      <th className="px-6 py-5">Entrada</th>
+                      <th className="px-6 py-5">Entrada / Status</th>
                       <th className="px-6 py-5">Duração</th>
-                      <th className="px-6 py-5 text-right">Ações</th>
+                      <th className="px-6 py-5 text-right">Controle Administrativo</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800">
@@ -176,11 +214,55 @@ const HumanResources: React.FC<HRProps> = ({ sessions, onUpdateSessions, users, 
                             {selectedIds.includes(s.id) && <i className="fa-solid fa-check text-[10px]"></i>}
                           </button>
                         </td>
-                        <td className="px-6 py-5 font-bold text-slate-200">{s.mechanicName}</td>
-                        <td className="px-6 py-5 text-slate-400 text-xs font-mono">{new Date(s.startTime).toLocaleString()}</td>
+                        <td className="px-6 py-5">
+                          <span className="font-bold text-slate-200 block">{s.mechanicName}</span>
+                          <span className="text-[9px] text-slate-500 font-black uppercase tracking-widest">{s.id}</span>
+                        </td>
+                        <td className="px-6 py-5">
+                          <span className="text-slate-400 text-xs font-mono block mb-1">{new Date(s.startTime).toLocaleString()}</span>
+                          <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${s.status === 'active' ? 'bg-primary/10 text-primary border border-primary/20' : s.status === 'paused' ? 'bg-yellow-500/10 text-yellow-500 border border-yellow-500/20' : 'bg-slate-800 text-slate-500'}`}>
+                            {s.status === 'active' ? 'Em Serviço' : s.status === 'paused' ? 'Pausado' : 'Finalizado'}
+                          </span>
+                        </td>
                         <td className="px-6 py-5 text-slate-300 font-mono text-sm">{formatDuration(calculateSessionTime(s, now))}</td>
                         <td className="px-6 py-5 text-right" onClick={e => e.stopPropagation()}>
-                          <button onClick={() => performDelete([s.id])} className="p-2 text-slate-600 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all"><i className="fa-solid fa-trash-can"></i></button>
+                          <div className="flex items-center justify-end gap-2">
+                             {s.status !== 'completed' && (
+                               <>
+                                 {s.status === 'active' ? (
+                                   <button 
+                                     onClick={() => handleRemotePause(s)}
+                                     title="Pausar Turno Remotamente"
+                                     className="w-10 h-10 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500 hover:text-slate-950 rounded-xl transition-all flex items-center justify-center"
+                                   >
+                                     <i className="fa-solid fa-pause"></i>
+                                   </button>
+                                 ) : (
+                                   <button 
+                                     onClick={() => handleRemoteResume(s)}
+                                     title="Retomar Turno Remotamente"
+                                     className="w-10 h-10 bg-primary/10 text-primary hover:bg-primary hover:text-slate-950 rounded-xl transition-all flex items-center justify-center"
+                                   >
+                                     <i className="fa-solid fa-play"></i>
+                                   </button>
+                                 )}
+                                 <button 
+                                   onClick={() => handleRemoteFinalize(s)}
+                                   title="Encerrar Turno (Clock Out)"
+                                   className="w-10 h-10 bg-red-500/10 text-red-500 hover:bg-red-500 hover:text-white rounded-xl transition-all flex items-center justify-center"
+                                 >
+                                   <i className="fa-solid fa-stop"></i>
+                                 </button>
+                               </>
+                             )}
+                             <button 
+                               onClick={() => performDelete([s.id])} 
+                               title="Excluir Registro"
+                               className="w-10 h-10 bg-slate-800 text-slate-500 hover:bg-red-500 hover:text-white rounded-xl transition-all flex items-center justify-center"
+                             >
+                               <i className="fa-solid fa-trash-can text-xs"></i>
+                             </button>
+                          </div>
                         </td>
                       </tr>
                     ))}

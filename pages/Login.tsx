@@ -13,7 +13,6 @@ const LoginPage: React.FC<LoginProps> = ({ users, workshops, onLogin, settings }
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [showHelp, setShowHelp] = useState(false);
   
   const [step, setStep] = useState<'credentials' | 'select-workshop'>('credentials');
   const [tempUser, setTempUser] = useState<User | null>(null);
@@ -119,13 +118,6 @@ const LoginPage: React.FC<LoginProps> = ({ users, workshops, onLogin, settings }
                     <i className="fa-solid fa-circle-exclamation text-lg"></i>
                     <span>{error}</span>
                   </div>
-                  <button 
-                    type="button"
-                    onClick={() => setShowHelp(true)}
-                    className="text-white/40 hover:text-emerald-400 underline mt-2 block text-[10px] uppercase tracking-widest"
-                  >
-                    Ver ajuda de acesso
-                  </button>
                 </div>
               )}
 
@@ -182,37 +174,6 @@ const LoginPage: React.FC<LoginProps> = ({ users, workshops, onLogin, settings }
             </div>
           )}
         </div>
-
-        {showHelp && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/90 backdrop-blur-md animate-in fade-in duration-300">
-             <div className="bg-slate-900 border border-slate-800 rounded-[3rem] p-10 max-w-sm w-full text-center shadow-2xl">
-                <div className="w-16 h-16 bg-emerald-500/10 text-emerald-500 rounded-2xl flex items-center justify-center mx-auto mb-6 text-3xl">
-                  <i className="fa-solid fa-shield-halved"></i>
-                </div>
-                <h3 className="text-xl font-black text-white uppercase tracking-tighter mb-4">Primeiro Acesso?</h3>
-                <p className="text-xs text-slate-500 mb-8 leading-relaxed">Se você é o dono, use as credenciais padrão abaixo. Se você é funcionário, solicite o arquivo de backup ao seu gerente.</p>
-                
-                <div className="bg-slate-950 p-6 rounded-3xl border border-slate-800 text-left space-y-4 mb-8">
-                   <div className="flex justify-between items-center">
-                     <span className="text-[10px] text-slate-600 font-black uppercase tracking-widest">Usuário Padrão</span>
-                     <span className="text-emerald-500 font-mono font-bold text-sm">Panda</span>
-                   </div>
-                   <div className="h-px bg-slate-800/50"></div>
-                   <div className="flex justify-between items-center">
-                     <span className="text-[10px] text-slate-600 font-black uppercase tracking-widest">Senha Padrão</span>
-                     <span className="text-emerald-500 font-mono font-bold text-sm">123</span>
-                   </div>
-                </div>
-
-                <button 
-                  onClick={() => setShowHelp(false)}
-                  className="w-full bg-white text-slate-950 font-black py-4 rounded-2xl hover:opacity-90 transition-all uppercase tracking-widest text-xs"
-                >
-                  Vou Tentar
-                </button>
-             </div>
-          </div>
-        )}
 
         <div className="mt-12 text-center">
            <p className="text-slate-700 text-[9px] font-black uppercase tracking-[0.4em] mb-2">&copy; 2024 OFICINA CENTRAL PRO</p>
