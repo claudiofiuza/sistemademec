@@ -1,25 +1,38 @@
 
 import { CloudConfig } from './types';
 
+// ==========================================
+// COLE A URL DO SEU GOOGLE APPS SCRIPT AQUI:
+// ==========================================
+const GLOBAL_GSHEETS_URL = ""; 
+
 export const saveCloudConfig = (config: CloudConfig) => {
   localStorage.setItem('lsc_cloud_config_v4', JSON.stringify(config));
 };
 
 export const getCloudConfig = (): CloudConfig => {
   const stored = localStorage.getItem('lsc_cloud_config_v4');
-  return stored ? JSON.parse(stored) : { provider: 'none' };
+  if (stored) return JSON.parse(stored);
+  
+  // Se não houver config local mas houver a URL global, usamos a global automaticamente
+  if (GLOBAL_GSHEETS_URL) {
+    return { provider: 'gsheets', gsheetsUrl: GLOBAL_GSHEETS_URL };
+  }
+  
+  return { provider: 'none' };
 };
 
 export const syncToCloud = async (data: any) => {
   const config = getCloudConfig();
+  const url = config.gsheetsUrl || GLOBAL_GSHEETS_URL;
   
   if (config.provider === 'github' && config.githubToken) {
     const { githubToken, githubOwner, githubRepo } = config;
     const path = 'database.json';
-    const url = `https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/${path}`;
+    const targetUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/${path}`;
     
     try {
-      const getRes = await fetch(url, {
+      const getRes = await fetch(targetUrl, {
         headers: { 
           'Authorization': `Bearer ${githubToken}`,
           'Accept': 'application/vnd.github.v3+json',
@@ -34,7 +47,7 @@ export const syncToCloud = async (data: any) => {
       }
 
       const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
-      const putRes = await fetch(url, {
+      const putRes = await fetch(targetUrl, {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${githubToken}`,
@@ -51,16 +64,20 @@ export const syncToCloud = async (data: any) => {
     } catch (e) { return false; }
   }
 
-  if (config.provider === 'gsheets' && config.gsheetsUrl) {
+  if ((config.provider === 'gsheets' || GLOBAL_GSHEETS_URL) && url) {
     try {
-      const res = await fetch(config.gsheetsUrl, {
+      // Usando POST para enviar os dados
+      await fetch(url, {
         method: 'POST',
-        mode: 'no-cors', // Google Apps Script requer redirecionamento
+        mode: 'no-cors', 
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
-      return true; // no-cors não permite ler resposta, assumimos sucesso
-    } catch (e) { return false; }
+      return true; 
+    } catch (e) { 
+      console.error("Erro ao sincronizar com Google Drive:", e);
+      return false; 
+    }
   }
 
   return false;
@@ -68,13 +85,14 @@ export const syncToCloud = async (data: any) => {
 
 export const fetchFromCloud = async () => {
   const config = getCloudConfig();
+  const url = config.gsheetsUrl || GLOBAL_GSHEETS_URL;
   
   if (config.provider === 'github' && config.githubToken) {
     const { githubToken, githubOwner, githubRepo } = config;
-    const url = `https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/database.json?nocache=${Date.now()}`;
+    const targetUrl = `https://api.github.com/repos/${githubOwner}/${githubRepo}/contents/database.json?nocache=${Date.now()}`;
     
     try {
-      const res = await fetch(url, {
+      const res = await fetch(targetUrl, {
         headers: { 
           'Authorization': `Bearer ${githubToken}`,
           'Accept': 'application/vnd.github.v3+json',
@@ -89,12 +107,19 @@ export const fetchFromCloud = async () => {
     } catch (e) { return null; }
   }
 
-  if (config.provider === 'gsheets' && config.gsheetsUrl) {
+  if ((config.provider === 'gsheets' || GLOBAL_GSHEETS_URL) && url) {
     try {
-      const res = await fetch(config.gsheetsUrl);
+      const res = await fetch(url);
       const data = await res.json();
-      return (data && Object.keys(data).length > 0) ? data : { _isNew: true };
-    } catch (e) { return null; }
+      // Se o retorno for um objeto vazio ou não tiver workshops, tratamos como novo
+      if (!data || Object.keys(data).length === 0 || !data.workshops) {
+        return { _isNew: true };
+      }
+      return data;
+    } catch (e) { 
+      console.error("Erro ao buscar do Google Drive:", e);
+      return null; 
+    }
   }
 
   return null;
