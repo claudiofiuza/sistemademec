@@ -1,7 +1,0 @@
-{
-  "name": "Los Santos Customs Pro - Workshop Manager",
-  "description": "A comprehensive management and service calculation tool for GTA RP mechanics, featuring member management, dynamic pricing, service history, and AI-powered service analysis.",
-  "requestFramePermissions": [
-    "camera"
-  ]
-}
