@@ -6,9 +6,10 @@ export interface SyncConfig {
   path: string;
 }
 
-// Configurações globais embutidas para sincronização com o repositório do usuário claudiofiuza
+// Configurações globais embutidas para sincronização
 export const CLOUD_CONFIG: SyncConfig = {
-  // Token para acesso ao repositório privado lsc-pro-db
+  // ATENÇÃO: Se este token foi exposto publicamente, o GitHub pode tê-lo revogado. 
+  // Caso o erro persista, gere um novo token (Classic) com escopo 'repo' no GitHub.
   token: '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',
   owner: 'claudiofiuza', 
   repo: 'lsc-pro-db',    
@@ -17,15 +18,16 @@ export const CLOUD_CONFIG: SyncConfig = {
 
 export const syncToCloud = async (data: any) => {
   const { token, owner, repo, path } = CLOUD_CONFIG;
-  if (!token || owner === 'seu-usuario') return null;
+  if (!token || token.includes('SEU_TOKEN')) return null;
 
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}`;
   
   try {
     const getRes = await fetch(url, {
       headers: { 
-        Authorization: `token ${token}`,
-        'Accept': 'application/vnd.github.v3+json'
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Cache-Control': 'no-cache'
       }
     });
     
@@ -35,47 +37,62 @@ export const syncToCloud = async (data: any) => {
       sha = fileData.sha;
     }
 
+    // Encoding UTF-8 seguro para Base64
     const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
+    
     const putRes = await fetch(url, {
       method: 'PUT',
       headers: {
-        Authorization: `token ${token}`,
+        'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
         'Accept': 'application/vnd.github.v3+json'
       },
       body: JSON.stringify({
-        message: 'Sync: LSC Pro Database Update',
+        message: `Cloud Sync: ${new Date().toISOString()}`,
         content,
         sha: sha || undefined
       })
     });
 
+    if (!putRes.ok) {
+      const err = await putRes.json();
+      console.error("Erro no PUT do GitHub:", err);
+    }
+
     return putRes.ok;
   } catch (error) {
-    console.error("Erro na sincronização Cloud:", error);
+    console.error("Erro crítico na sincronização Cloud:", error);
     return false;
   }
 };
 
 export const fetchFromCloud = async () => {
   const { token, owner, repo, path } = CLOUD_CONFIG;
-  if (!token || owner === 'seu-usuario') return null;
+  if (!token || token.includes('SEU_TOKEN')) return null;
 
-  // Adicionamos nocache para garantir que sempre pegamos a versão mais recente do banco de dados no boot
+  // Cache-busting agressivo para evitar dados antigos
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?nocache=${Date.now()}`;
   
   try {
     const res = await fetch(url, {
       headers: { 
-        Authorization: `token ${token}`,
-        'Accept': 'application/vnd.github.v3+json'
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Cache-Control': 'no-cache'
       }
     });
     
-    if (!res.ok) return null;
+    if (!res.ok) {
+      if (res.status === 404) console.warn("Banco de dados não encontrado no GitHub. Criando um novo ao salvar.");
+      return null;
+    }
     
     const fileData = await res.json();
-    const content = decodeURIComponent(escape(atob(fileData.content)));
+    
+    // IMPORTANTE: GitHub adiciona \n no base64 de arquivos grandes. Precisamos remover.
+    const cleanBase64 = fileData.content.replace(/\s/g, '');
+    const content = decodeURIComponent(escape(atob(cleanBase64)));
+    
     return JSON.parse(content);
   } catch (error) {
     console.error("Erro ao buscar dados Cloud:", error);
