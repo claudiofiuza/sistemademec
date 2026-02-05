@@ -43,6 +43,8 @@ const App: React.FC = () => {
 
   const loadCloudData = useCallback(async () => {
     const config = getCloudConfig();
+    
+    // Se não tiver provedor configurado nem URL global, entra em modo offline
     if (config.provider === 'none') {
       setBootStatus('Modo Offline: Nuvem não configurada.');
       setTimeout(() => setIsBooting(false), 800);
@@ -51,30 +53,32 @@ const App: React.FC = () => {
 
     setIsSyncing(true);
     setBootError(null);
-    setBootStatus(`Conectando ao ${config.provider === 'github' ? 'GitHub' : 'Google Sheets'}...`);
+    setBootStatus(`Conectando à Nuvem LSC...`);
     
     try {
       const data = await fetchFromCloud();
       if (data && data._isNew) {
-        setBootStatus('Banco de dados inicializado na nuvem.');
+        setBootStatus('Nuvem detectada (Vazia). Inicializando...');
+        // Força uma primeira sincronização para criar o arquivo se ele não existir
+        await syncToCloud({ workshops, users: globalUsers });
         setTimeout(() => setIsBooting(false), 800);
       } else if (data && data.workshops && data.users) {
         setWorkshops(data.workshops);
         setGlobalUsers(data.users);
-        setBootStatus('Sincronização concluída!');
+        setBootStatus('Dados sincronizados com sucesso!');
         setTimeout(() => setIsBooting(false), 800);
       } else {
-        setBootStatus('Falha na resposta da nuvem.');
-        setBootError('Verifique se suas credenciais (Token/URL) estão corretas.');
-        setTimeout(() => setIsBooting(false), 2500);
+        setBootStatus('Aguardando resposta do servidor...');
+        setBootError('Verifique sua conexão ou se a URL da Planilha ainda é válida.');
+        setTimeout(() => setIsBooting(false), 3000);
       }
     } catch (err) {
-      setBootError('Erro de conexão com a nuvem.');
-      setTimeout(() => setIsBooting(false), 2500);
+      setBootError('Erro de comunicação com os serviços Google.');
+      setTimeout(() => setIsBooting(false), 3000);
     } finally {
       setIsSyncing(false);
     }
-  }, [setWorkshops, setGlobalUsers]);
+  }, [setWorkshops, setGlobalUsers, workshops, globalUsers]);
 
   useEffect(() => {
     loadCloudData();
@@ -143,16 +147,24 @@ const App: React.FC = () => {
         <div className="bg-slate-900 border border-slate-800 w-full max-w-lg rounded-[3rem] p-10 shadow-2xl space-y-8">
           <div>
             <h3 className="text-2xl font-black text-white uppercase italic tracking-tighter">Conexão em Nuvem</h3>
-            <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Configure onde os dados serão salvos</p>
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Gestão de Sincronização Global</p>
           </div>
 
           <div className="flex bg-slate-950 p-1.5 rounded-2xl border border-slate-800 gap-1">
+            <button onClick={() => setCfg({...cfg, provider: 'gsheets'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${cfg.provider === 'gsheets' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500'}`}>GOOGLE DRIVE</button>
             <button onClick={() => setCfg({...cfg, provider: 'github'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${cfg.provider === 'github' ? 'bg-primary text-slate-950 shadow-lg' : 'text-slate-500'}`}>GITHUB</button>
-            <button onClick={() => setCfg({...cfg, provider: 'gsheets'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${cfg.provider === 'gsheets' ? 'bg-emerald-500 text-slate-950 shadow-lg' : 'text-slate-500'}`}>PLANILHA</button>
             <button onClick={() => setCfg({...cfg, provider: 'none'})} className={`flex-1 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${cfg.provider === 'none' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-500'}`}>OFFLINE</button>
           </div>
 
           <div className="space-y-4">
+            {cfg.provider === 'gsheets' && (
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">URL do Aplicativo Web (Google Scripts)</label>
+                <input type="text" value={cfg.gsheetsUrl || ''} onChange={e => setCfg({...cfg, gsheetsUrl: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white text-xs outline-none focus:ring-1 ring-emerald-500" placeholder="https://script.google.com/macros/s/..." />
+                <p className="text-[8px] text-slate-500 font-bold uppercase leading-tight p-2">Este método usa sua pasta do Google Drive como banco de dados. É mais estável e livre de bloqueios.</p>
+              </div>
+            )}
+
             {cfg.provider === 'github' && (
               <>
                 <div className="space-y-2">
@@ -161,35 +173,27 @@ const App: React.FC = () => {
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">Owner (Usuário)</label>
+                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">Usuário</label>
                     <input type="text" value={cfg.githubOwner || ''} onChange={e => setCfg({...cfg, githubOwner: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white text-xs" placeholder="seu-usuario" />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">Repo (Pasta)</label>
+                    <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">Repositório</label>
                     <input type="text" value={cfg.githubRepo || ''} onChange={e => setCfg({...cfg, githubRepo: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white text-xs" placeholder="lsc-pro-db" />
                   </div>
                 </div>
               </>
             )}
 
-            {cfg.provider === 'gsheets' && (
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">URL do Web App (Google Scripts)</label>
-                <input type="text" value={cfg.gsheetsUrl || ''} onChange={e => setCfg({...cfg, gsheetsUrl: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white text-xs" placeholder="https://script.google.com/macros/s/..." />
-                <p className="text-[8px] text-slate-500 font-bold uppercase leading-tight p-2">Dica: Use o Google Sheets para uma conexão mais estável se o GitHub bloquear seu Token.</p>
-              </div>
-            )}
-
             {cfg.provider === 'none' && (
               <div className="p-6 bg-slate-950 border border-slate-800 rounded-3xl text-center">
-                <p className="text-xs text-slate-500 font-medium italic">Os dados serão salvos apenas no seu computador atual.</p>
+                <p className="text-xs text-slate-500 font-medium italic">Dados salvos apenas no navegador. Útil para testes ou modo privado.</p>
               </div>
             )}
           </div>
 
           <div className="flex gap-4">
-            <button onClick={handleSave} className="flex-1 bg-primary text-slate-950 font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-xs transition-all hover:scale-105">Salvar e Reiniciar</button>
-            <button onClick={() => setShowCloudConfig(false)} className="px-8 bg-slate-800 text-slate-400 font-bold rounded-2xl uppercase tracking-widest text-xs">Fechar</button>
+            <button onClick={handleSave} className="flex-1 bg-primary text-slate-950 font-black py-5 rounded-2xl shadow-xl uppercase tracking-widest text-xs transition-all hover:scale-105">Aplicar e Reiniciar</button>
+            <button onClick={() => setShowCloudConfig(false)} className="px-8 bg-slate-800 text-slate-400 font-bold rounded-2xl uppercase tracking-widest text-xs">Sair</button>
           </div>
         </div>
       </div>
@@ -209,7 +213,7 @@ const App: React.FC = () => {
           </p>
           {bootError && <p className="text-[9px] text-slate-600 font-bold bg-red-500/10 p-4 rounded-2xl border border-red-500/20">{bootError}</p>}
         </div>
-        <button onClick={() => setShowCloudConfig(true)} className="mt-10 text-[9px] font-black text-slate-700 hover:text-white uppercase tracking-widest border border-slate-900 px-4 py-2 rounded-lg transition-all">Configurar Conexão Manual</button>
+        <button onClick={() => setShowCloudConfig(true)} className="mt-10 text-[9px] font-black text-slate-700 hover:text-white uppercase tracking-widest border border-slate-900 px-4 py-2 rounded-lg transition-all">Manutenção de Nuvem</button>
         {showCloudConfig && <CloudSetupModal />}
       </div>
     );
