@@ -43,24 +43,28 @@ const App: React.FC = () => {
   const loadCloudData = useCallback(async () => {
     setIsSyncing(true);
     setBootError(null);
-    setBootStatus('Conectando ao Banco de Dados Nuvem...');
+    setBootStatus('Verificando Banco de Dados...');
     
     try {
       const data = await fetchFromCloud();
-      if (data && data.workshops && data.users) {
+      
+      if (data && data._isNew) {
+        setBootStatus('Banco de dados inicializado (Nuvem Vazia).');
+        // Se é novo, mantemos os usuários locais (Panda) e permitimos entrar
+        setTimeout(() => setIsBooting(false), 800);
+      } else if (data && data.workshops && data.users) {
         setWorkshops(data.workshops);
         setGlobalUsers(data.users);
-        setBootStatus('Sincronização concluída com sucesso!');
+        setBootStatus('Dados sincronizados com sucesso!');
         setTimeout(() => setIsBooting(false), 800);
       } else {
-        // Se a nuvem retornar null, pode ser a primeira vez ou erro de token
-        setBootStatus('Atenção: Servidor de nuvem não respondeu.');
-        setBootError('Não foi possível carregar os usuários da nuvem. Verifique o Token ou a conexão.');
-        // Permitir entrar após 3 segundos mesmo com erro (modo offline)
+        setBootStatus('Falha na comunicação com a nuvem.');
+        setBootError('Não foi possível validar seu Token ou a conexão com o repositório.');
+        // Em caso de erro real, damos 3 seg para o usuário ler a mensagem antes de liberar o modo offline
         setTimeout(() => setIsBooting(false), 3000);
       }
     } catch (err) {
-      setBootError('Erro crítico de rede. Verifique seu firewall ou internet.');
+      setBootError('Erro crítico de rede.');
       setTimeout(() => setIsBooting(false), 3000);
     } finally {
       setIsSyncing(false);
@@ -78,10 +82,8 @@ const App: React.FC = () => {
       users: newUsers || globalUsers,
       lastUpdate: new Date().toISOString()
     });
-    if (!success) {
-      console.error("Falha ao salvar na nuvem. Dados salvos apenas localmente.");
-    }
     setIsSyncing(false);
+    return success;
   }, [workshops, globalUsers]);
 
   const isSuperAdmin = useMemo(() => currentUser?.workshopId === 'system', [currentUser]);
@@ -135,6 +137,8 @@ const App: React.FC = () => {
     } else if (u.workshopId !== 'system') {
       setActiveWorkshopId(u.workshopId);
     }
+    // Sincroniza ao logar para garantir que o arquivo seja criado na nuvem caso não exista
+    triggerCloudSync();
   };
 
   const handleLogout = () => {
