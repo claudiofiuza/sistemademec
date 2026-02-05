@@ -47,31 +47,34 @@ const App: React.FC = () => {
   }, [workshops, globalUsers]);
 
   const loadData = useCallback(async () => {
-    const data = await fetchFromSupabase();
-    if (data && data.workshops && data.users) {
-      setWorkshops(data.workshops);
-      setGlobalUsers(data.users);
-      setDbStatus('online');
+    try {
+      const data = await fetchFromSupabase();
+      if (data && data.workshops && data.users) {
+        setWorkshops(data.workshops);
+        setGlobalUsers(data.users);
+        setDbStatus('online');
+      }
+    } catch (err) {
+      setDbStatus('offline');
     }
   }, [setWorkshops, setGlobalUsers]);
 
+  // Carregamento inicial e auto-sync
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 30000); // Sync suave a cada 30s
+    const interval = setInterval(loadData, 20000); // Sincroniza a cada 20 segundos
     return () => clearInterval(interval);
   }, [loadData]);
 
   const isSuperAdmin = currentUser?.workshopId === 'system';
   const currentWorkshopId = isSuperAdmin ? activeWorkshopId : currentUser?.workshopId || null;
-  const workshop = workshops.find(w => w.id === currentWorkshopId) || null;
-  const workshopUsers = globalUsers.filter(u => u.workshopId === currentWorkshopId && u.workshopId !== 'system');
+  const workshop = useMemo(() => workshops.find(w => w.id === currentWorkshopId) || null, [workshops, currentWorkshopId]);
+  const workshopUsers = useMemo(() => globalUsers.filter(u => u.workshopId === currentWorkshopId && u.workshopId !== 'system'), [globalUsers, currentWorkshopId]);
 
   const updateWorkshop = (updated: Partial<Workshop>) => {
-    setWorkshops(prev => {
-      const newState = prev.map(w => w.id === currentWorkshopId ? { ...w, ...updated } : w);
-      syncData(newState);
-      return newState;
-    });
+    const newState = workshops.map(w => w.id === currentWorkshopId ? { ...w, ...updated } : w);
+    setWorkshops(newState);
+    syncData(newState);
   };
 
   return (
@@ -89,15 +92,15 @@ const App: React.FC = () => {
         )}
         <main className="flex-1 overflow-auto bg-slate-950/50 backdrop-blur-sm">
           <Routes>
-            <Route path="/login" element={currentUser ? <Navigate to="/" /> : <LoginPage users={globalUsers} workshops={workshops} onLogin={(u, ws) => { setCurrentUser(u); if(ws) setActiveWorkshopId(ws); else if(u.workshopId !== 'system') setActiveWorkshopId(u.workshopId); syncData(); }} settings={DEFAULT_SETTINGS} />} />
-            <Route path="/central" element={<ProtectedRoute user={currentUser}><CentralControl workshops={workshops} setWorkshops={setWorkshops} users={globalUsers} setUsers={setGlobalUsers} currentUser={currentUser} onEnterWorkshop={setActiveWorkshopId} triggerSync={syncData} /></ProtectedRoute>} />
-            <Route path="/" element={<ProtectedRoute user={currentUser}>{workshop ? <Dashboard user={currentUser!} history={workshop.history} parts={workshop.parts} settings={workshop.settings} announcements={workshop.announcements} workSessions={workshop.workSessions} /> : <Navigate to="/central" />}</ProtectedRoute>} />
-            <Route path="/calculator" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.USE_CALCULATOR} workshop={workshop}><ServiceCalculator user={currentUser!} parts={workshop?.parts || []} settings={workshop?.settings || DEFAULT_SETTINGS} onSave={(record) => { const updatedHistory = [record, ...(workshop?.history || [])]; updateWorkshop({ history: updatedHistory }); const newUsers = globalUsers.map(u => u.id === record.mechanicId ? { ...u, pendingTax: (u.pendingTax || 0) + record.tax } : u); setGlobalUsers(newUsers); syncData(undefined, newUsers); }} /></ProtectedRoute>} />
-            <Route path="/history" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.VIEW_HISTORY} workshop={workshop}><History user={currentUser!} history={workshop?.history || []} settings={workshop?.settings || DEFAULT_SETTINGS} /></ProtectedRoute>} />
-            <Route path="/timetracker" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.VIEW_TIME_TRACKER} workshop={workshop}><TimeTracker user={currentUser!} sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} /></ProtectedRoute>} />
-            <Route path="/hr" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_TIME_TRACKER} workshop={workshop}><HumanResources sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} users={workshopUsers} setUsers={setGlobalUsers} settings={workshop?.settings || DEFAULT_SETTINGS} workshop={workshop} onUpdateWorkshop={updateWorkshop} currentUser={currentUser} /></ProtectedRoute>} />
-            <Route path="/announcements" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_ANNOUNCEMENTS} workshop={workshop}><AnnouncementsManager user={currentUser!} announcements={workshop?.announcements || []} setAnnouncements={(a) => updateWorkshop({ announcements: a })} users={workshopUsers} /></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_SETTINGS} workshop={workshop}><AdminPanel user={currentUser!} users={workshopUsers} setUsers={(u) => { const res = typeof u === 'function' ? u(workshopUsers) : u; const full = [...globalUsers.filter(gu => gu.workshopId !== currentWorkshopId || gu.workshopId === 'system'), ...res]; setGlobalUsers(full); syncData(undefined, full); }} roles={workshop?.roles || []} setRoles={(r) => updateWorkshop({ roles: typeof r === 'function' ? r(workshop!.roles) : r })} parts={workshop?.parts || []} setParts={(p) => updateWorkshop({ parts: typeof p === 'function' ? p(workshop!.parts) : p })} settings={workshop?.settings || DEFAULT_SETTINGS} setSettings={(s) => updateWorkshop({ settings: typeof s === 'function' ? s(workshop!.settings) : s })} workshopId={currentWorkshopId!} /></ProtectedRoute>} />
+            <Route path="/login" element={currentUser ? <Navigate to="/" /> : <LoginPage users={globalUsers} workshops={workshops} onLogin={(u, ws) => { setCurrentUser(u); if(ws) setActiveWorkshopId(ws); else if(u.workshopId !== 'system') setActiveWorkshopId(u.workshopId); }} settings={DEFAULT_SETTINGS} />} />
+            <Route path="/central" element={<ProtectedRoute user={currentUser} workshop={workshop}><CentralControl workshops={workshops} setWorkshops={setWorkshops} users={globalUsers} setUsers={setGlobalUsers} currentUser={currentUser} onEnterWorkshop={setActiveWorkshopId} triggerSync={syncData} /></ProtectedRoute>} />
+            <Route path="/" element={<ProtectedRoute user={currentUser} workshop={workshop}>{workshop ? <Dashboard user={currentUser!} history={workshop.history} parts={workshop.parts} settings={workshop.settings} announcements={workshop.announcements} workSessions={workshop.workSessions} /> : <Navigate to="/central" />}</ProtectedRoute>} />
+            <Route path="/calculator" element={<ProtectedRoute user={currentUser} workshop={workshop} requiredPermission={Permission.USE_CALCULATOR}><ServiceCalculator user={currentUser!} parts={workshop?.parts || []} settings={workshop?.settings || DEFAULT_SETTINGS} onSave={(record) => { const updatedHistory = [record, ...(workshop?.history || [])]; updateWorkshop({ history: updatedHistory }); const newUsers = globalUsers.map(u => u.id === record.mechanicId ? { ...u, pendingTax: (u.pendingTax || 0) + record.tax } : u); setGlobalUsers(newUsers); syncData(undefined, newUsers); }} /></ProtectedRoute>} />
+            <Route path="/history" element={<ProtectedRoute user={currentUser} workshop={workshop} requiredPermission={Permission.VIEW_HISTORY}><History user={currentUser!} history={workshop?.history || []} settings={workshop?.settings || DEFAULT_SETTINGS} /></ProtectedRoute>} />
+            <Route path="/timetracker" element={<ProtectedRoute user={currentUser} workshop={workshop} requiredPermission={Permission.VIEW_TIME_TRACKER}><TimeTracker user={currentUser!} sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} /></ProtectedRoute>} />
+            <Route path="/hr" element={<ProtectedRoute user={currentUser} workshop={workshop} requiredPermission={Permission.MANAGE_TIME_TRACKER}><HumanResources sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} users={workshopUsers} setUsers={setGlobalUsers} settings={workshop?.settings || DEFAULT_SETTINGS} workshop={workshop} onUpdateWorkshop={updateWorkshop} currentUser={currentUser} /></ProtectedRoute>} />
+            <Route path="/announcements" element={<ProtectedRoute user={currentUser} workshop={workshop} requiredPermission={Permission.MANAGE_ANNOUNCEMENTS}><AnnouncementsManager user={currentUser!} announcements={workshop?.announcements || []} setAnnouncements={(a) => updateWorkshop({ announcements: a })} users={workshopUsers} /></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute user={currentUser} workshop={workshop} requiredPermission={Permission.MANAGE_SETTINGS}><AdminPanel user={currentUser!} users={workshopUsers} setUsers={(u) => { const res = typeof u === 'function' ? u(workshopUsers) : u; const full = [...globalUsers.filter(gu => gu.workshopId !== currentWorkshopId || gu.workshopId === 'system'), ...res]; setGlobalUsers(full); syncData(undefined, full); }} roles={workshop?.roles || []} setRoles={(r) => updateWorkshop({ roles: typeof r === 'function' ? r(workshop!.roles) : r })} parts={workshop?.parts || []} setParts={(p) => updateWorkshop({ parts: typeof p === 'function' ? p(workshop!.parts) : p })} settings={workshop?.settings || DEFAULT_SETTINGS} setSettings={(s) => updateWorkshop({ settings: typeof s === 'function' ? s(workshop!.settings) : s })} workshopId={currentWorkshopId!} /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>
@@ -132,7 +135,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
             <i className="fa-solid fa-car-side"></i>
           </div>
           <div className="overflow-hidden">
-            <h1 className="font-black text-xs text-white uppercase truncate tracking-tight italic">{workshop?.settings.workshopName || (isSuperAdmin ? 'REDE GLOBAL' : 'LSC PRO')}</h1>
+            <h1 className="font-black text-xs text-white uppercase truncate tracking-tight italic">{workshop?.settings.workshopName || (isSuperAdmin ? 'ADMINISTRAÇÃO' : 'LSC PRO')}</h1>
             <p className="text-[8px] text-emerald-500/60 font-black uppercase tracking-[0.3em] mt-0.5">Terminal V5</p>
           </div>
         </div>
@@ -162,7 +165,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
         ) : isSuperAdmin && (
           <div className="p-8 text-center opacity-40">
              <i className="fa-solid fa-store-slash text-4xl mb-4 block"></i>
-             <p className="text-[9px] font-black uppercase tracking-widest">Selecione uma unidade para habilitar o menu</p>
+             <p className="text-[9px] font-black uppercase tracking-widest">Selecione uma unidade no menu central</p>
           </div>
         )}
       </nav>
