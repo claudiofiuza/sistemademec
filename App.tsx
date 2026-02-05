@@ -2,8 +2,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { HashRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { User, Permission, Role, Part, ServiceRecord, AppSettings, Workshop, Announcement, WorkSession } from './types';
-import { INITIAL_USERS, INITIAL_WORKSHOPS, SUPER_ADMIN_ID, DEFAULT_SETTINGS } from './constants';
-import { fetchFromCloud, syncToCloud, CLOUD_CONFIG } from './githubSync';
+import { INITIAL_USERS, INITIAL_WORKSHOPS, DEFAULT_SETTINGS } from './constants';
+import { fetchFromSupabase, saveToSupabase } from './supabaseService';
 import LoginPage from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ServiceCalculator from './pages/ServiceCalculator';
@@ -30,339 +30,74 @@ const usePersistedState = <T,>(key: string, defaultValue: T): [T, React.Dispatch
 };
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_global_users_v4', INITIAL_USERS);
-  const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v4', INITIAL_WORKSHOPS);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [isBooting, setIsBooting] = useState(true);
-  const [bootStatus, setBootStatus] = useState('Iniciando sistemas...');
-  const [bootError, setBootError] = useState<string | null>(null);
-  
-  const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_workshop_id_v4', null);
+  const [currentUser, setCurrentUser] = usePersistedState<User | null>('lsc_user_v5', null);
+  const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_users_v5', INITIAL_USERS);
+  const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v5', INITIAL_WORKSHOPS);
+  const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_ws_v5', null);
+  const [dbStatus, setDbStatus] = useState<'online' | 'syncing' | 'error' | 'offline'>('online');
 
-  const loadCloudData = useCallback(async () => {
-    setIsSyncing(true);
-    setBootError(null);
-    setBootStatus('Verificando Banco de Dados...');
-    
-    try {
-      const data = await fetchFromCloud();
-      
-      if (data && data._isNew) {
-        setBootStatus('Banco de dados inicializado (Nuvem Vazia).');
-        // Se é novo, mantemos os usuários locais (Panda) e permitimos entrar
-        setTimeout(() => setIsBooting(false), 800);
-      } else if (data && data.workshops && data.users) {
-        setWorkshops(data.workshops);
-        setGlobalUsers(data.users);
-        setBootStatus('Dados sincronizados com sucesso!');
-        setTimeout(() => setIsBooting(false), 800);
-      } else {
-        setBootStatus('Falha na comunicação com a nuvem.');
-        setBootError('Não foi possível validar seu Token ou a conexão com o repositório.');
-        // Em caso de erro real, damos 3 seg para o usuário ler a mensagem antes de liberar o modo offline
-        setTimeout(() => setIsBooting(false), 3000);
-      }
-    } catch (err) {
-      setBootError('Erro crítico de rede.');
-      setTimeout(() => setIsBooting(false), 3000);
-    } finally {
-      setIsSyncing(false);
+  const syncData = useCallback(async (ws?: Workshop[], us?: User[]) => {
+    setDbStatus('syncing');
+    const success = await saveToSupabase({
+      workshops: ws || workshops,
+      users: us || globalUsers,
+      ts: Date.now()
+    });
+    setDbStatus(success ? 'online' : 'offline');
+  }, [workshops, globalUsers]);
+
+  const loadData = useCallback(async () => {
+    const data = await fetchFromSupabase();
+    if (data && data.workshops && data.users) {
+      setWorkshops(data.workshops);
+      setGlobalUsers(data.users);
+      setDbStatus('online');
     }
   }, [setWorkshops, setGlobalUsers]);
 
   useEffect(() => {
-    loadCloudData();
-  }, [loadCloudData]);
+    loadData();
+    const interval = setInterval(loadData, 30000); // Sync suave a cada 30s
+    return () => clearInterval(interval);
+  }, [loadData]);
 
-  const triggerCloudSync = useCallback(async (newWorkshops?: Workshop[], newUsers?: User[]) => {
-    setIsSyncing(true);
-    const success = await syncToCloud({
-      workshops: newWorkshops || workshops,
-      users: newUsers || globalUsers,
-      lastUpdate: new Date().toISOString()
-    });
-    setIsSyncing(false);
-    return success;
-  }, [workshops, globalUsers]);
+  const isSuperAdmin = currentUser?.workshopId === 'system';
+  const currentWorkshopId = isSuperAdmin ? activeWorkshopId : currentUser?.workshopId || null;
+  const workshop = workshops.find(w => w.id === currentWorkshopId) || null;
+  const workshopUsers = globalUsers.filter(u => u.workshopId === currentWorkshopId && u.workshopId !== 'system');
 
-  const isSuperAdmin = useMemo(() => currentUser?.workshopId === 'system', [currentUser]);
-
-  const currentWorkshopId = useMemo(() => {
-    if (isSuperAdmin) return activeWorkshopId;
-    return currentUser?.workshopId || null;
-  }, [isSuperAdmin, currentUser, activeWorkshopId]);
-
-  const workshop = useMemo(() => 
-    workshops.find(w => w.id === currentWorkshopId) || null
-  , [workshops, currentWorkshopId]);
-
-  const workshopUsers = useMemo(() => 
-    globalUsers.filter(u => u.workshopId === currentWorkshopId && u.workshopId !== 'system')
-  , [globalUsers, currentWorkshopId]);
-
-  useEffect(() => {
-    const color = workshop?.settings.primaryColor || DEFAULT_SETTINGS.primaryColor;
-    document.documentElement.style.setProperty('--primary-color', color);
-    
-    let styleTag = document.getElementById('dynamic-theme');
-    if (!styleTag) {
-      styleTag = document.createElement('style');
-      styleTag.id = 'dynamic-theme';
-      document.head.appendChild(styleTag);
-    }
-    styleTag.innerHTML = `
-      .bg-primary { background-color: var(--primary-color); }
-      .text-primary { color: var(--primary-color); }
-      .border-primary { border-color: var(--primary-color); }
-      .ring-primary { --tw-ring-color: var(--primary-color); }
-      .shadow-primary { --tw-shadow-color: var(--primary-color); }
-    `;
-  }, [workshop?.settings.primaryColor]);
-
-  const updateWorkshop = useCallback((updated: Partial<Workshop>) => {
-    setWorkshops(prevWorkshops => {
-      const wsId = isSuperAdmin ? activeWorkshopId : currentUser?.workshopId;
-      if (!wsId) return prevWorkshops;
-      const newState = prevWorkshops.map(w => w.id === wsId ? { ...w, ...updated } : w);
-      setTimeout(() => triggerCloudSync(newState), 500);
+  const updateWorkshop = (updated: Partial<Workshop>) => {
+    setWorkshops(prev => {
+      const newState = prev.map(w => w.id === currentWorkshopId ? { ...w, ...updated } : w);
+      syncData(newState);
       return newState;
     });
-  }, [isSuperAdmin, currentUser, activeWorkshopId, setWorkshops, triggerCloudSync]);
-
-  const handleLogin = (u: User, selectedWorkshopId?: string) => {
-    setCurrentUser(u);
-    if (selectedWorkshopId) {
-      setActiveWorkshopId(selectedWorkshopId);
-    } else if (u.workshopId !== 'system') {
-      setActiveWorkshopId(u.workshopId);
-    }
-    // Sincroniza ao logar para garantir que o arquivo seja criado na nuvem caso não exista
-    triggerCloudSync();
   };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-    setActiveWorkshopId(null);
-  };
-
-  const handleUpdateProfile = (avatar: string) => {
-    if (!currentUser) return;
-    const updatedUser = { ...currentUser, avatar };
-    const newUsers = globalUsers.map(u => u.id === currentUser.id ? updatedUser : u);
-    setGlobalUsers(newUsers);
-    setCurrentUser(updatedUser);
-    triggerCloudSync(undefined, newUsers);
-  };
-
-  const userPermissions = useMemo(() => {
-    if (isSuperAdmin) return Object.values(Permission);
-    const role = workshop?.roles.find(r => r.id === currentUser?.roleId);
-    return role?.permissions || [];
-  }, [isSuperAdmin, currentUser, workshop]);
-
-  const ProtectedRoute = ({ children, requiredPermission }: { children: React.ReactNode, requiredPermission?: Permission }) => {
-    if (!currentUser) return <Navigate to="/login" replace />;
-    if (!isSuperAdmin && requiredPermission && !userPermissions.includes(requiredPermission)) {
-      return <Navigate to="/" replace />;
-    }
-    if (isSuperAdmin && !activeWorkshopId && window.location.hash !== '#/central') {
-       return <Navigate to="/central" replace />;
-    }
-    return <>{children}</>;
-  };
-
-  if (isBooting) {
-    return (
-      <div className="h-screen w-full bg-slate-950 flex flex-col items-center justify-center p-10">
-        <div className="relative mb-12">
-          <div className="w-24 h-24 rounded-3xl bg-primary flex items-center justify-center text-slate-950 text-4xl shadow-[0_0_50px_rgba(var(--primary-color-rgb),0.3)] animate-pulse">
-            <i className="fa-solid fa-car-on"></i>
-          </div>
-          <div className="absolute inset-0 w-24 h-24 rounded-3xl border-4 border-primary/20 animate-ping"></div>
-        </div>
-        
-        <div className="text-center space-y-4 max-w-sm w-full">
-          <h2 className="text-2xl font-black text-white uppercase tracking-tighter italic">LSC PRO SYSTEM</h2>
-          <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
-            <div className="h-full bg-primary animate-[shimmer_2s_infinite] w-[40%]"></div>
-          </div>
-          <p className={`text-[10px] font-black uppercase tracking-[0.3em] ${bootError ? 'text-red-500' : 'text-primary animate-pulse'}`}>
-            {bootStatus}
-          </p>
-          {bootError && (
-            <p className="text-[9px] text-slate-500 font-bold bg-red-500/10 p-3 rounded-xl border border-red-500/20">
-              {bootError}
-            </p>
-          )}
-        </div>
-
-        <div className="fixed bottom-10 text-center opacity-30">
-           <p className="text-[8px] text-slate-600 font-black uppercase tracking-[0.5em]">Establishing Secure Connection to GitHub Services</p>
-        </div>
-
-        <style>{`
-          @keyframes shimmer {
-            0% { transform: translateX(-100%); }
-            100% { transform: translateX(300%); }
-          }
-        `}</style>
-      </div>
-    );
-  }
 
   return (
     <HashRouter>
-      <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
+      <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden font-['Inter']">
         {currentUser && (
           <Sidebar 
             user={currentUser} 
             workshop={workshop} 
             activeWorkshopId={activeWorkshopId}
-            onLogout={handleLogout}
+            dbStatus={dbStatus}
+            onLogout={() => { setCurrentUser(null); setActiveWorkshopId(null); }}
             onResetContext={() => setActiveWorkshopId(null)}
-            onUpdateAvatar={handleUpdateProfile}
-            isSyncing={isSyncing}
-            onManualSync={loadCloudData}
           />
         )}
-        <main className="flex-1 overflow-auto relative">
+        <main className="flex-1 overflow-auto bg-slate-950/50 backdrop-blur-sm">
           <Routes>
-            <Route path="/login" element={
-              currentUser ? <Navigate to="/" /> : <LoginPage users={globalUsers} workshops={workshops} onLogin={handleLogin} settings={workshops[0]?.settings || DEFAULT_SETTINGS} />
-            } />
-            
-            <Route path="/central" element={
-              <ProtectedRoute>
-                {isSuperAdmin ? (
-                  <CentralControl 
-                    workshops={workshops} 
-                    setWorkshops={(ws) => { 
-                      const res = typeof ws === 'function' ? ws(workshops) : ws;
-                      setWorkshops(res);
-                      triggerCloudSync(res);
-                    }} 
-                    users={globalUsers}
-                    setUsers={(us) => {
-                      const res = typeof us === 'function' ? us(globalUsers) : us;
-                      setGlobalUsers(res);
-                      triggerCloudSync(undefined, res);
-                    }}
-                    currentUser={currentUser}
-                    onEnterWorkshop={(id) => setActiveWorkshopId(id)} 
-                    triggerSync={() => triggerCloudSync()}
-                  />
-                ) : <Navigate to="/" />}
-              </ProtectedRoute>
-            } />
-
-            <Route path="/" element={
-              <ProtectedRoute>
-                {workshop ? (
-                   <Dashboard 
-                    user={currentUser!} 
-                    history={workshop.history} 
-                    parts={workshop.parts} 
-                    settings={workshop.settings} 
-                    announcements={workshop.announcements}
-                    workSessions={workshop.workSessions}
-                   />
-                ) : <Navigate to="/central" />}
-              </ProtectedRoute>
-            } />
-
-            <Route path="/calculator" element={
-              <ProtectedRoute requiredPermission={Permission.USE_CALCULATOR}>
-                <ServiceCalculator 
-                  user={currentUser!} 
-                  parts={workshop?.parts || []} 
-                  settings={workshop?.settings || DEFAULT_SETTINGS} 
-                  onSave={(record) => {
-                    const updatedHistory = [record, ...(workshop?.history || [])];
-                    updateWorkshop({ history: updatedHistory });
-                    
-                    const newUsers = globalUsers.map(u => 
-                      u.id === record.mechanicId 
-                        ? { ...u, pendingTax: (u.pendingTax || 0) + record.tax } 
-                        : u
-                    );
-                    setGlobalUsers(newUsers);
-                    triggerCloudSync(undefined, newUsers);
-                  }} 
-                />
-              </ProtectedRoute>
-            } />
-
-            <Route path="/history" element={
-              <ProtectedRoute requiredPermission={Permission.VIEW_HISTORY}>
-                <History user={currentUser!} history={workshop?.history || []} settings={workshop?.settings || DEFAULT_SETTINGS} />
-              </ProtectedRoute>
-            } />
-
-            <Route path="/timetracker" element={
-              <ProtectedRoute requiredPermission={Permission.VIEW_TIME_TRACKER}>
-                <TimeTracker 
-                  user={currentUser!} 
-                  sessions={workshop?.workSessions || []} 
-                  onUpdateSessions={(s) => updateWorkshop({ workSessions: s })}
-                />
-              </ProtectedRoute>
-            } />
-
-            <Route path="/hr" element={
-              <ProtectedRoute requiredPermission={Permission.MANAGE_TIME_TRACKER}>
-                <HumanResources 
-                  sessions={workshop?.workSessions || []} 
-                  onUpdateSessions={(s) => updateWorkshop({ workSessions: s })}
-                  users={workshopUsers}
-                  setUsers={(us) => {
-                    const res = typeof us === 'function' ? us(globalUsers) : us;
-                    setGlobalUsers(res);
-                    triggerCloudSync(undefined, res);
-                  }}
-                  settings={workshop?.settings || DEFAULT_SETTINGS}
-                  workshop={workshop}
-                  onUpdateWorkshop={updateWorkshop}
-                  currentUser={currentUser}
-                />
-              </ProtectedRoute>
-            } />
-
-            <Route path="/announcements" element={
-              <ProtectedRoute requiredPermission={Permission.MANAGE_ANNOUNCEMENTS}>
-                <AnnouncementsManager 
-                  user={currentUser!} 
-                  announcements={workshop?.announcements || []} 
-                  setAnnouncements={(a) => updateWorkshop({ announcements: a })}
-                  users={workshopUsers}
-                />
-              </ProtectedRoute>
-            } />
-
-            <Route path="/admin" element={
-              <ProtectedRoute>
-                <AdminPanel 
-                  user={currentUser!}
-                  users={workshopUsers} 
-                  setUsers={(newUsers) => {
-                    const updater = typeof newUsers === 'function' ? newUsers : () => newUsers;
-                    const result = updater(workshopUsers);
-                    const others = globalUsers.filter(u => u.workshopId !== currentWorkshopId || u.workshopId === 'system');
-                    const fullUsers = [...others, ...result];
-                    setGlobalUsers(fullUsers);
-                    triggerCloudSync(undefined, fullUsers);
-                  }} 
-                  roles={workshop?.roles || []}
-                  setRoles={(r) => updateWorkshop({ roles: typeof r === 'function' ? r(workshop!.roles) : r })}
-                  parts={workshop?.parts || []} 
-                  setParts={(p) => updateWorkshop({ parts: typeof p === 'function' ? p(workshop!.parts) : p })} 
-                  settings={workshop?.settings || DEFAULT_SETTINGS}
-                  setSettings={(s) => updateWorkshop({ settings: typeof s === 'function' ? s(workshop!.settings) : s })}
-                  workshopId={currentWorkshopId!}
-                />
-              </ProtectedRoute>
-            } />
-
+            <Route path="/login" element={currentUser ? <Navigate to="/" /> : <LoginPage users={globalUsers} workshops={workshops} onLogin={(u, ws) => { setCurrentUser(u); if(ws) setActiveWorkshopId(ws); else if(u.workshopId !== 'system') setActiveWorkshopId(u.workshopId); syncData(); }} settings={DEFAULT_SETTINGS} />} />
+            <Route path="/central" element={<ProtectedRoute user={currentUser}><CentralControl workshops={workshops} setWorkshops={setWorkshops} users={globalUsers} setUsers={setGlobalUsers} currentUser={currentUser} onEnterWorkshop={setActiveWorkshopId} triggerSync={syncData} /></ProtectedRoute>} />
+            <Route path="/" element={<ProtectedRoute user={currentUser}>{workshop ? <Dashboard user={currentUser!} history={workshop.history} parts={workshop.parts} settings={workshop.settings} announcements={workshop.announcements} workSessions={workshop.workSessions} /> : <Navigate to="/central" />}</ProtectedRoute>} />
+            <Route path="/calculator" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.USE_CALCULATOR} workshop={workshop}><ServiceCalculator user={currentUser!} parts={workshop?.parts || []} settings={workshop?.settings || DEFAULT_SETTINGS} onSave={(record) => { const updatedHistory = [record, ...(workshop?.history || [])]; updateWorkshop({ history: updatedHistory }); const newUsers = globalUsers.map(u => u.id === record.mechanicId ? { ...u, pendingTax: (u.pendingTax || 0) + record.tax } : u); setGlobalUsers(newUsers); syncData(undefined, newUsers); }} /></ProtectedRoute>} />
+            <Route path="/history" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.VIEW_HISTORY} workshop={workshop}><History user={currentUser!} history={workshop?.history || []} settings={workshop?.settings || DEFAULT_SETTINGS} /></ProtectedRoute>} />
+            <Route path="/timetracker" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.VIEW_TIME_TRACKER} workshop={workshop}><TimeTracker user={currentUser!} sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} /></ProtectedRoute>} />
+            <Route path="/hr" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_TIME_TRACKER} workshop={workshop}><HumanResources sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} users={workshopUsers} setUsers={setGlobalUsers} settings={workshop?.settings || DEFAULT_SETTINGS} workshop={workshop} onUpdateWorkshop={updateWorkshop} currentUser={currentUser} /></ProtectedRoute>} />
+            <Route path="/announcements" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_ANNOUNCEMENTS} workshop={workshop}><AnnouncementsManager user={currentUser!} announcements={workshop?.announcements || []} setAnnouncements={(a) => updateWorkshop({ announcements: a })} users={workshopUsers} /></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_SETTINGS} workshop={workshop}><AdminPanel user={currentUser!} users={workshopUsers} setUsers={(u) => { const res = typeof u === 'function' ? u(workshopUsers) : u; const full = [...globalUsers.filter(gu => gu.workshopId !== currentWorkshopId || gu.workshopId === 'system'), ...res]; setGlobalUsers(full); syncData(undefined, full); }} roles={workshop?.roles || []} setRoles={(r) => updateWorkshop({ roles: typeof r === 'function' ? r(workshop!.roles) : r })} parts={workshop?.parts || []} setParts={(p) => updateWorkshop({ parts: typeof p === 'function' ? p(workshop!.parts) : p })} settings={workshop?.settings || DEFAULT_SETTINGS} setSettings={(s) => updateWorkshop({ settings: typeof s === 'function' ? s(workshop!.settings) : s })} workshopId={currentWorkshopId!} /></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>
@@ -371,202 +106,94 @@ const App: React.FC = () => {
   );
 };
 
-const Sidebar: React.FC<{ 
-  user: User, 
-  workshop: Workshop | null, 
-  activeWorkshopId: string | null, 
-  onLogout: () => void,
-  onResetContext: () => void,
-  onUpdateAvatar: (url: string) => void,
-  isSyncing: boolean,
-  onManualSync: () => void
-}> = ({ user, workshop, activeWorkshopId, onLogout, onResetContext, onUpdateAvatar, isSyncing, onManualSync }) => {
+const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopId: string | null, dbStatus: string, onLogout: () => void, onResetContext: () => void }> = ({ user, workshop, activeWorkshopId, dbStatus, onLogout, onResetContext }) => {
   const location = useLocation();
   const navigate = useNavigate();
-  const [showProfileEdit, setShowProfileEdit] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState(user.avatar || '');
-  
-  useEffect(() => {
-    setAvatarUrl(user.avatar || '');
-  }, [user.avatar]);
-
   const isSuperAdmin = user.workshopId === 'system';
-  const perms = isSuperAdmin ? Object.values(Permission) : workshop?.roles.find(r => r.id === user.roleId)?.permissions || [];
+  const role = workshop?.roles.find(r => r.id === user.roleId);
+  const perms = isSuperAdmin ? Object.values(Permission) : role?.permissions || [];
 
-  const navItems = [
-    { path: '/', label: 'Painel', icon: 'fa-gauge', perm: Permission.VIEW_DASHBOARD },
-    { path: '/calculator', label: 'Calculadora', icon: 'fa-calculator', perm: Permission.USE_CALCULATOR },
-    { path: '/history', label: 'Histórico', icon: 'fa-clock-rotate-left', perm: Permission.VIEW_HISTORY },
-    { path: '/timetracker', label: 'Ponto Eletrônico', icon: 'fa-stopwatch', perm: Permission.VIEW_TIME_TRACKER },
-  ];
-
-  const hasAdminAccess = isSuperAdmin || [Permission.MANAGE_STAFF, Permission.MANAGE_PARTS, Permission.MANAGE_ROLES, Permission.MANAGE_SETTINGS].some(p => perms.includes(p));
-  const canManageAnnouncements = isSuperAdmin || perms.includes(Permission.MANAGE_ANNOUNCEMENTS);
-  const canManageHR = isSuperAdmin || perms.includes(Permission.MANAGE_TIME_TRACKER);
-
-  const handleAvatarSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onUpdateAvatar(avatarUrl);
-    setShowProfileEdit(false);
+  const NavLink = ({ to, icon, label, permission }: { to: string, icon: string, label: string, permission?: Permission }) => {
+    if (permission && !perms.includes(permission)) return null;
+    const active = location.pathname === to;
+    return (
+      <Link to={to} className={`group flex items-center space-x-3 px-4 py-3.5 rounded-2xl transition-all duration-300 ${active ? 'bg-emerald-500 text-slate-950 font-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}>
+        <i className={`fa-solid ${icon} w-5 text-center text-sm ${active ? 'text-slate-950' : 'group-hover:text-emerald-400'}`}></i>
+        <span className="text-[10px] uppercase tracking-[0.2em] font-black">{label}</span>
+      </Link>
+    );
   };
 
   return (
-    <div className="w-64 bg-slate-900 border-r border-slate-800 flex flex-col hidden md:flex">
-      <div className="p-6 flex flex-col space-y-4">
-        <div className="flex items-center space-x-3">
-          {workshop?.settings.logoUrl ? (
-            <img src={workshop.settings.logoUrl} className="w-10 h-10 rounded-lg object-contain" alt="Logo" />
-          ) : (
-            <div className="w-10 h-10 rounded-lg bg-primary flex items-center justify-center text-white text-xl">
-              <i className="fa-solid fa-car"></i>
-            </div>
-          )}
-          <h1 className="font-bold text-lg leading-tight tracking-tight uppercase truncate">
-            {workshop?.settings.workshopName || workshop?.name || 'Sistema Central'}
-          </h1>
+    <div className="w-64 bg-slate-900/80 border-r border-slate-800/50 flex flex-col shrink-0">
+      <div className="p-8">
+        <div className="flex items-center space-x-4 mb-8">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-slate-950 text-2xl shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+            <i className="fa-solid fa-car-side"></i>
+          </div>
+          <div className="overflow-hidden">
+            <h1 className="font-black text-xs text-white uppercase truncate tracking-tight italic">{workshop?.settings.workshopName || (isSuperAdmin ? 'REDE GLOBAL' : 'LSC PRO')}</h1>
+            <p className="text-[8px] text-emerald-500/60 font-black uppercase tracking-[0.3em] mt-0.5">Terminal V5</p>
+          </div>
         </div>
-        
         {isSuperAdmin && activeWorkshopId && (
-          <button 
-            onClick={() => { onResetContext(); navigate('/central'); }}
-            className="text-[10px] font-black text-primary hover:opacity-80 bg-primary/10 py-1.5 px-3 rounded-lg flex items-center justify-center transition-all border border-primary/20"
-          >
-            <i className="fa-solid fa-arrow-left-long mr-2"></i> VOLTAR AO CONTROLE CENTRAL
+          <button onClick={() => { onResetContext(); navigate('/central'); }} className="w-full text-[9px] font-black text-emerald-400 bg-emerald-500/5 py-3 rounded-2xl border border-emerald-500/20 hover:bg-emerald-500 hover:text-slate-950 transition-all uppercase tracking-widest">
+            <i className="fa-solid fa-arrow-left mr-2"></i> CENTRAL
           </button>
         )}
       </div>
 
-      <nav className="flex-1 px-4 space-y-1 mt-2">
-        {isSuperAdmin && (
-          <Link
-            to="/central"
-            className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${
-              location.pathname === '/central' 
-                ? 'bg-primary text-slate-950 font-bold shadow-lg shadow-primary/20' 
-                : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-            }`}
-          >
-            <i className="fa-solid fa-microchip w-5"></i>
-            <span>Controle Central</span>
-          </Link>
-        )}
-
-        {(workshop || isSuperAdmin) && activeWorkshopId && (
-          <div className="pt-4 space-y-1">
-            <div className="px-4 pb-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Oficina Atual</div>
-            {navItems.filter(item => isSuperAdmin || perms.includes(item.perm)).map((item) => (
-              <Link
-                key={item.path}
-                to={item.path}
-                className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${
-                  location.pathname === item.path 
-                    ? 'bg-primary/10 text-primary border border-primary/20' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <i className={`fa-solid ${item.icon} w-5`}></i>
-                <span className="font-medium">{item.label}</span>
-              </Link>
-            ))}
-
-            {canManageHR && (
-              <Link
-                to="/hr"
-                className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${
-                  location.pathname === '/hr' 
-                    ? 'bg-primary/10 text-primary border border-primary/20' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <i className="fa-solid fa-user-check w-5"></i>
-                <span className="font-medium">Gestão de RH</span>
-              </Link>
-            )}
-
-            {canManageAnnouncements && (
-              <Link
-                to="/announcements"
-                className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${
-                  location.pathname === '/announcements' 
-                    ? 'bg-primary/10 text-primary border border-primary/20' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <i className="fa-solid fa-bullhorn w-5"></i>
-                <span className="font-medium">Comunicados</span>
-              </Link>
-            )}
-
-            {hasAdminAccess && (
-              <Link
-                to="/admin"
-                className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${
-                  location.pathname === '/admin' 
-                    ? 'bg-primary/10 text-primary border border-primary/20' 
-                    : 'text-slate-400 hover:bg-slate-800 hover:text-white'
-                }`}
-              >
-                <i className="fa-solid fa-screwdriver-wrench w-5"></i>
-                <span className="font-medium">Gerenciar</span>
-              </Link>
-            )}
+      <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto custom-scrollbar">
+        {isSuperAdmin && <NavLink to="/central" icon="fa-microchip" label="Control Center" />}
+        
+        {(workshop || (isSuperAdmin && activeWorkshopId)) ? (
+          <>
+            <div className="px-4 pt-6 pb-2 text-[8px] font-black text-slate-600 uppercase tracking-[0.4em]">Operacional</div>
+            <NavLink to="/" icon="fa-gauge-high" label="Dashboard" />
+            <NavLink to="/calculator" icon="fa-calculator" label="Calculadora" permission={Permission.USE_CALCULATOR} />
+            <NavLink to="/history" icon="fa-clock-rotate-left" label="Histórico" permission={Permission.VIEW_HISTORY} />
+            <NavLink to="/timetracker" icon="fa-stopwatch" label="Ponto" permission={Permission.VIEW_TIME_TRACKER} />
+            
+            <div className="px-4 pt-6 pb-2 text-[8px] font-black text-slate-600 uppercase tracking-[0.4em]">Gerenciamento</div>
+            <NavLink to="/hr" icon="fa-users-gear" label="Recursos Humanos" permission={Permission.MANAGE_TIME_TRACKER} />
+            <NavLink to="/announcements" icon="fa-bullhorn" label="Comunicados" permission={Permission.MANAGE_ANNOUNCEMENTS} />
+            <NavLink to="/admin" icon="fa-screwdriver-wrench" label="Configurações" permission={Permission.MANAGE_SETTINGS} />
+          </>
+        ) : isSuperAdmin && (
+          <div className="p-8 text-center opacity-40">
+             <i className="fa-solid fa-store-slash text-4xl mb-4 block"></i>
+             <p className="text-[9px] font-black uppercase tracking-widest">Selecione uma unidade para habilitar o menu</p>
           </div>
         )}
       </nav>
 
-      <div className="p-4 border-t border-slate-800 relative">
-        <div className="mb-3 flex justify-center">
-           <button 
-             onClick={onManualSync}
-             className={`flex items-center gap-2 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all hover:scale-105 active:scale-95 bg-emerald-500/10 text-emerald-500 border-emerald-500/20`}
-           >
-              <i className={`fa-solid ${isSyncing ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-down'}`}></i>
-              {isSyncing ? 'Sincronizando...' : 'Sincronização Ativa'}
-           </button>
-        </div>
-
-        <div className="flex items-center space-x-3 p-3 bg-slate-800/30 rounded-2xl border border-slate-800/50">
-          <button onClick={() => setShowProfileEdit(true)} className="group relative">
-            <img src={user.avatar} className="w-10 h-10 rounded-full border-2 border-slate-700 shadow-inner group-hover:opacity-50 transition-all" alt="avatar" />
-            <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-              <i className="fa-solid fa-pen text-[10px] text-white"></i>
+      <div className="p-6 mt-auto">
+        <div className="bg-slate-950/50 rounded-3xl p-4 border border-slate-800/50">
+          <div className="flex items-center justify-between mb-4 px-1">
+             <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Status Supabase</span>
+             <div className={`w-2 h-2 rounded-full ${dbStatus === 'online' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : dbStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500 animate-ping'}`}></div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <img src={user.avatar} className="w-10 h-10 rounded-2xl border border-slate-800" alt="u" />
+            <div className="flex-1 overflow-hidden">
+              <p className="text-[11px] font-black text-white uppercase truncate">{user.name}</p>
+              <p className="text-[8px] text-emerald-500 font-bold uppercase truncate tracking-widest">{role?.name || (isSuperAdmin ? 'ROOT' : 'USER')}</p>
             </div>
-          </button>
-          <div className="flex-1 overflow-hidden text-left">
-            <p className="text-sm font-bold truncate text-slate-200">{user.name}</p>
-            <p className="text-[10px] text-primary font-black uppercase tracking-widest truncate">
-              {isSuperAdmin ? 'Super Admin' : (workshop?.roles.find(r => r.id === user.roleId)?.name || 'Mecânico')}
-            </p>
+            <button onClick={onLogout} className="p-2 text-slate-600 hover:text-red-500 transition-colors"><i className="fa-solid fa-power-off text-xs"></i></button>
           </div>
-          <button 
-            onClick={onLogout}
-            className="p-2 text-slate-500 hover:text-red-400 transition-colors"
-          >
-            <i className="fa-solid fa-power-off"></i>
-          </button>
         </div>
-
-        {showProfileEdit && (
-          <div className="absolute bottom-full left-4 right-4 mb-2 p-4 bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl z-50 animate-in slide-in-from-bottom-2">
-            <form onSubmit={handleAvatarSubmit} className="space-y-3">
-              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest text-center">Alterar Foto de Perfil</p>
-              <input 
-                type="text" 
-                value={avatarUrl} 
-                onChange={e => setAvatarUrl(e.target.value)} 
-                placeholder="URL da Imagem..."
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl p-2 text-xs text-white outline-none focus:ring-1 focus:ring-primary"
-              />
-              <div className="flex gap-2">
-                <button type="submit" className="flex-1 bg-primary text-slate-950 font-bold py-2 rounded-lg text-xs">Salvar</button>
-                <button type="button" onClick={() => setShowProfileEdit(false)} className="flex-1 bg-slate-700 text-white font-bold py-2 rounded-lg text-xs">Sair</button>
-              </div>
-            </form>
-          </div>
-        )}
       </div>
     </div>
   );
+};
+
+const ProtectedRoute = ({ children, user, requiredPermission, workshop }: any) => { 
+  if (!user) return <Navigate to="/login" replace />; 
+  if (requiredPermission && user.workshopId !== 'system') {
+    const role = workshop?.roles.find((r: any) => r.id === user.roleId);
+    if (!role?.permissions.includes(requiredPermission)) return <Navigate to="/" replace />;
+  }
+  return <>{children}</>; 
 };
 
 export default App;
