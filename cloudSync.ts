@@ -4,7 +4,7 @@ import { CloudConfig } from './types';
 // ==========================================
 // URL DO GOOGLE DRIVE (APPS SCRIPT)
 // ==========================================
-const GLOBAL_GSHEETS_URL = "https://script.google.com/macros/s/AKfycbxWEq_7VvsF1kRl77ACpQBnRwYGTltuwPzYns1fjn_7h_aIgpTy-AAFJk4WWB3ZT34/exec"; 
+const GLOBAL_GSHEETS_URL = "https://script.google.com/macros/s/AKfycbxWEq_7VvsF1kRl77ACpQBnRwYGTItuwPzYns1fjn_7h_algpTy-AAFJk4WWB3ZT34/exec"; 
 
 export const saveCloudConfig = (config: CloudConfig) => {
   localStorage.setItem('lsc_cloud_config_v4', JSON.stringify(config));
@@ -29,20 +29,20 @@ export const syncToCloud = async (data: any) => {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 6000); // Timeout de 6s
+    const timeoutId = setTimeout(() => controller.abort(), 3500); // Timeout agressivo de 3.5s
 
-    // Envio assíncrono para o Google Script
-    await fetch(url, {
+    // Usa 'no-cors' para Google Apps Script POST para evitar erros de pré-vôo CORS
+    fetch(url, {
       method: 'POST',
       mode: 'no-cors', 
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
       signal: controller.signal
-    });
+    }).catch(() => {}); // Falha silenciosa
+
     clearTimeout(timeoutId);
     return true; 
   } catch (e) { 
-    console.warn("Nuvem ocupada ou offline. Dados salvos localmente.");
     return false; 
   }
 };
@@ -55,7 +55,7 @@ export const fetchFromCloud = async () => {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // Timeout de 10s para busca
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // Máximo 5s para buscar
 
     const res = await fetch(url, { signal: controller.signal });
     clearTimeout(timeoutId);
@@ -68,7 +68,7 @@ export const fetchFromCloud = async () => {
     }
     return data;
   } catch (e) { 
-    console.error("Erro ao buscar dados da Nuvem:", e);
+    console.warn("Nuvem indisponível no momento.");
     return null; 
   }
 };
