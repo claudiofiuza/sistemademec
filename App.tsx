@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { HashRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { User, Permission, Role, Part, ServiceRecord, AppSettings, Workshop, Announcement, WorkSession } from './types';
 import { INITIAL_USERS, INITIAL_WORKSHOPS, SUPER_ADMIN_ID, DEFAULT_SETTINGS } from './constants';
+import { fetchFromCloud, syncToCloud, CLOUD_CONFIG } from './githubSync';
 import LoginPage from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ServiceCalculator from './pages/ServiceCalculator';
@@ -32,18 +33,35 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_global_users_v4', INITIAL_USERS);
   const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v4', INITIAL_WORKSHOPS);
+  const [isSyncing, setIsSyncing] = useState(false);
   
   const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_workshop_id_v4', null);
 
-  // Sincroniza o usuário logado com as alterações feitas no painel admin ou central
-  useEffect(() => {
-    if (currentUser) {
-      const latestData = globalUsers.find(u => u.id === currentUser.id);
-      if (latestData && (latestData.name !== currentUser.name || latestData.avatar !== currentUser.avatar || latestData.roleId !== currentUser.roleId || latestData.password !== currentUser.password)) {
-        setCurrentUser(latestData);
-      }
+  // Sincronização automática com a nuvem ao carregar o app
+  const loadCloudData = useCallback(async () => {
+    setIsSyncing(true);
+    const data = await fetchFromCloud();
+    if (data && data.workshops && data.users) {
+      setWorkshops(data.workshops);
+      setGlobalUsers(data.users);
+      console.log("Nuvem sincronizada com sucesso.");
     }
-  }, [globalUsers, currentUser]);
+    setIsSyncing(false);
+  }, []);
+
+  useEffect(() => {
+    loadCloudData();
+  }, [loadCloudData]);
+
+  const triggerCloudSync = useCallback(async (newWorkshops?: Workshop[], newUsers?: User[]) => {
+    setIsSyncing(true);
+    await syncToCloud({
+      workshops: newWorkshops || workshops,
+      users: newUsers || globalUsers,
+      lastUpdate: new Date().toISOString()
+    });
+    setIsSyncing(false);
+  }, [workshops, globalUsers]);
 
   const isSuperAdmin = useMemo(() => currentUser?.workshopId === 'system', [currentUser]);
 
@@ -83,9 +101,11 @@ const App: React.FC = () => {
     setWorkshops(prevWorkshops => {
       const wsId = isSuperAdmin ? activeWorkshopId : currentUser?.workshopId;
       if (!wsId) return prevWorkshops;
-      return prevWorkshops.map(w => w.id === wsId ? { ...w, ...updated } : w);
+      const newState = prevWorkshops.map(w => w.id === wsId ? { ...w, ...updated } : w);
+      setTimeout(() => triggerCloudSync(newState), 500);
+      return newState;
     });
-  }, [isSuperAdmin, currentUser, activeWorkshopId, setWorkshops]);
+  }, [isSuperAdmin, currentUser, activeWorkshopId, setWorkshops, triggerCloudSync]);
 
   const handleLogin = (u: User, selectedWorkshopId?: string) => {
     setCurrentUser(u);
@@ -104,8 +124,10 @@ const App: React.FC = () => {
   const handleUpdateProfile = (avatar: string) => {
     if (!currentUser) return;
     const updatedUser = { ...currentUser, avatar };
-    setGlobalUsers(prev => prev.map(u => u.id === currentUser.id ? updatedUser : u));
+    const newUsers = globalUsers.map(u => u.id === currentUser.id ? updatedUser : u);
+    setGlobalUsers(newUsers);
     setCurrentUser(updatedUser);
+    triggerCloudSync(undefined, newUsers);
   };
 
   const userPermissions = useMemo(() => {
@@ -136,6 +158,8 @@ const App: React.FC = () => {
             onLogout={handleLogout}
             onResetContext={() => setActiveWorkshopId(null)}
             onUpdateAvatar={handleUpdateProfile}
+            isSyncing={isSyncing}
+            onManualSync={loadCloudData}
           />
         )}
         <main className="flex-1 overflow-auto relative">
@@ -149,11 +173,20 @@ const App: React.FC = () => {
                 {isSuperAdmin ? (
                   <CentralControl 
                     workshops={workshops} 
-                    setWorkshops={setWorkshops} 
+                    setWorkshops={(ws) => { 
+                      const res = typeof ws === 'function' ? ws(workshops) : ws;
+                      setWorkshops(res);
+                      triggerCloudSync(res);
+                    }} 
                     users={globalUsers}
-                    setUsers={setGlobalUsers}
+                    setUsers={(us) => {
+                      const res = typeof us === 'function' ? us(globalUsers) : us;
+                      setGlobalUsers(res);
+                      triggerCloudSync(undefined, res);
+                    }}
                     currentUser={currentUser}
                     onEnterWorkshop={(id) => setActiveWorkshopId(id)} 
+                    triggerSync={() => triggerCloudSync()}
                   />
                 ) : <Navigate to="/" />}
               </ProtectedRoute>
@@ -180,7 +213,18 @@ const App: React.FC = () => {
                   user={currentUser!} 
                   parts={workshop?.parts || []} 
                   settings={workshop?.settings || DEFAULT_SETTINGS} 
-                  onSave={(record) => updateWorkshop({ history: [record, ...(workshop?.history || [])] })} 
+                  onSave={(record) => {
+                    const updatedHistory = [record, ...(workshop?.history || [])];
+                    updateWorkshop({ history: updatedHistory });
+                    
+                    const newUsers = globalUsers.map(u => 
+                      u.id === record.mechanicId 
+                        ? { ...u, pendingTax: (u.pendingTax || 0) + record.tax } 
+                        : u
+                    );
+                    setGlobalUsers(newUsers);
+                    triggerCloudSync(undefined, newUsers);
+                  }} 
                 />
               </ProtectedRoute>
             } />
@@ -207,6 +251,11 @@ const App: React.FC = () => {
                   sessions={workshop?.workSessions || []} 
                   onUpdateSessions={(s) => updateWorkshop({ workSessions: s })}
                   users={workshopUsers}
+                  setUsers={(us) => {
+                    const res = typeof us === 'function' ? us(globalUsers) : us;
+                    setGlobalUsers(res);
+                    triggerCloudSync(undefined, res);
+                  }}
                   settings={workshop?.settings || DEFAULT_SETTINGS}
                 />
               </ProtectedRoute>
@@ -231,10 +280,10 @@ const App: React.FC = () => {
                   setUsers={(newUsers) => {
                     const updater = typeof newUsers === 'function' ? newUsers : () => newUsers;
                     const result = updater(workshopUsers);
-                    setGlobalUsers(prev => {
-                      const others = prev.filter(u => u.workshopId !== currentWorkshopId || u.workshopId === 'system');
-                      return [...others, ...result];
-                    });
+                    const others = globalUsers.filter(u => u.workshopId !== currentWorkshopId || u.workshopId === 'system');
+                    const fullUsers = [...others, ...result];
+                    setGlobalUsers(fullUsers);
+                    triggerCloudSync(undefined, fullUsers);
                   }} 
                   roles={workshop?.roles || []}
                   setRoles={(r) => updateWorkshop({ roles: typeof r === 'function' ? r(workshop!.roles) : r })}
@@ -261,8 +310,10 @@ const Sidebar: React.FC<{
   activeWorkshopId: string | null, 
   onLogout: () => void,
   onResetContext: () => void,
-  onUpdateAvatar: (url: string) => void
-}> = ({ user, workshop, activeWorkshopId, onLogout, onResetContext, onUpdateAvatar }) => {
+  onUpdateAvatar: (url: string) => void,
+  isSyncing: boolean,
+  onManualSync: () => void
+}> = ({ user, workshop, activeWorkshopId, onLogout, onResetContext, onUpdateAvatar, isSyncing, onManualSync }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const [showProfileEdit, setShowProfileEdit] = useState(false);
@@ -397,6 +448,16 @@ const Sidebar: React.FC<{
       </nav>
 
       <div className="p-4 border-t border-slate-800 relative">
+        <div className="mb-3 flex justify-center">
+           <button 
+             onClick={onManualSync}
+             className={`flex items-center gap-2 px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border transition-all hover:scale-105 active:scale-95 bg-emerald-500/10 text-emerald-500 border-emerald-500/20`}
+           >
+              <i className={`fa-solid ${isSyncing ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-down'}`}></i>
+              {isSyncing ? 'Sincronizando...' : 'Sincronização Ativa'}
+           </button>
+        </div>
+
         <div className="flex items-center space-x-3 p-3 bg-slate-800/30 rounded-2xl border border-slate-800/50">
           <button onClick={() => setShowProfileEdit(true)} className="group relative">
             <img src={user.avatar} className="w-10 h-10 rounded-full border-2 border-slate-700 shadow-inner group-hover:opacity-50 transition-all" alt="avatar" />

@@ -48,7 +48,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Panda (Super Admin)',
     roleId: 'r_admin',
     workshopId: 'system',
-    password: '12345',
+    password: '123',
     avatar: 'https://api.dicebear.com/7.x/bottts/svg?seed=Panda'
   }
 ];

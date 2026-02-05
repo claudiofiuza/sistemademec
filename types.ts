@@ -26,6 +26,7 @@ export interface User {
   workshopId: string;
   password?: string;
   avatar?: string;
+  pendingTax?: number; // New field for tax tracking
 }
 
 export interface Part {
