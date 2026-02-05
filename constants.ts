@@ -1,5 +1,7 @@
 
-import { Part, User, Permission, Role, AppSettings, Workshop } from './types';
+import { Permission, Role, AppSettings, Workshop, User } from './types';
+
+export const SUPER_ADMIN_ID = 'u1';
 
 export const INITIAL_ROLES: Role[] = [
   {
@@ -19,7 +21,25 @@ export const INITIAL_ROLES: Role[] = [
   }
 ];
 
-export const SUPER_ADMIN_ID = 'u1';
+export const DEFAULT_SETTINGS: AppSettings = {
+  workshopName: 'Los Santos Customs Pro',
+  logoUrl: '',
+  taxRate: 0.15,
+  freelanceMultiplier: 1.5,
+  primaryColor: '#10b981',
+  currencySymbol: 'R$',
+  categories: ['Motor', 'Transmissão', 'Estetica', 'Pintura', 'Suspensão', 'Outros'],
+  categoryGroups: {
+    'Motor': 'Performance',
+    'Transmissão': 'Performance',
+    'Estetica': 'Estetica',
+    'Pintura': 'Estetica',
+    'Suspensão': 'Performance',
+    'Outros': 'Estetica'
+  },
+  esteticaWebhook: '',
+  performanceWebhook: ''
+};
 
 export const INITIAL_USERS: User[] = [
   {
@@ -33,35 +53,15 @@ export const INITIAL_USERS: User[] = [
   }
 ];
 
-export const DEFAULT_SETTINGS: AppSettings = {
-  workshopName: 'Los Santos Customs',
-  logoUrl: '',
-  taxRate: 0.15,
-  freelanceMultiplier: 1.5,
-  primaryColor: '#10b981',
-  currencySymbol: 'R$',
-  categories: ['Motor', 'Transmissão', 'Lataria', 'Suspensão', 'Estetica', 'Outro'],
-  categoryGroups: {
-    'Motor': 'Performance',
-    'Transmissão': 'Performance',
-    'Lataria': 'Estetica',
-    'Suspensão': 'Performance',
-    'Estetica': 'Estetica',
-    'Outro': 'Estetica'
-  },
-  esteticaWebhook: '',
-  performanceWebhook: ''
-};
-
 export const INITIAL_WORKSHOPS: Workshop[] = [
   {
     id: 'w1',
-    name: 'Oficina Central Pro',
+    name: 'LSC Central',
     ownerId: SUPER_ADMIN_ID,
-    settings: { ...DEFAULT_SETTINGS, workshopName: 'Oficina Central Pro' },
+    settings: { ...DEFAULT_SETTINGS },
     parts: [
       { id: 'p1', name: 'Turbo Tuning', category: 'Motor', price: 15000 },
-      { id: 'p2', name: 'Motor Estágio 4', category: 'Motor', price: 25000 },
+      { id: 'p2', name: 'Pintura Mate', category: 'Pintura', price: 5000 },
     ],
     roles: [...INITIAL_ROLES],
     history: [],

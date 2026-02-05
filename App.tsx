@@ -35,17 +35,29 @@ const App: React.FC = () => {
   
   const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_workshop_id_v4', null);
 
+  // Sincroniza o usuário logado com as alterações feitas no painel admin ou central
+  useEffect(() => {
+    if (currentUser) {
+      const latestData = globalUsers.find(u => u.id === currentUser.id);
+      if (latestData && (latestData.name !== currentUser.name || latestData.avatar !== currentUser.avatar || latestData.roleId !== currentUser.roleId || latestData.password !== currentUser.password)) {
+        setCurrentUser(latestData);
+      }
+    }
+  }, [globalUsers, currentUser]);
+
+  const isSuperAdmin = useMemo(() => currentUser?.workshopId === 'system', [currentUser]);
+
   const currentWorkshopId = useMemo(() => {
-    if (currentUser?.id === SUPER_ADMIN_ID) return activeWorkshopId;
+    if (isSuperAdmin) return activeWorkshopId;
     return currentUser?.workshopId || null;
-  }, [currentUser, activeWorkshopId]);
+  }, [isSuperAdmin, currentUser, activeWorkshopId]);
 
   const workshop = useMemo(() => 
     workshops.find(w => w.id === currentWorkshopId) || null
   , [workshops, currentWorkshopId]);
 
   const workshopUsers = useMemo(() => 
-    globalUsers.filter(u => u.workshopId === currentWorkshopId && u.id !== SUPER_ADMIN_ID)
+    globalUsers.filter(u => u.workshopId === currentWorkshopId && u.workshopId !== 'system')
   , [globalUsers, currentWorkshopId]);
 
   useEffect(() => {
@@ -67,21 +79,13 @@ const App: React.FC = () => {
     `;
   }, [workshop?.settings.primaryColor]);
 
-  // RELIABLE WORKSHOP UPDATER
   const updateWorkshop = useCallback((updated: Partial<Workshop>) => {
     setWorkshops(prevWorkshops => {
-      // Find current workshop ID using the most recent state context to avoid closure issues
-      const wsId = currentUser?.id === SUPER_ADMIN_ID ? activeWorkshopId : currentUser?.workshopId;
+      const wsId = isSuperAdmin ? activeWorkshopId : currentUser?.workshopId;
       if (!wsId) return prevWorkshops;
-      
-      const exists = prevWorkshops.some(w => w.id === wsId);
-      if (!exists) return prevWorkshops;
-
-      return prevWorkshops.map(w => 
-        w.id === wsId ? { ...w, ...updated } : w
-      );
+      return prevWorkshops.map(w => w.id === wsId ? { ...w, ...updated } : w);
     });
-  }, [currentUser, activeWorkshopId, setWorkshops]);
+  }, [isSuperAdmin, currentUser, activeWorkshopId, setWorkshops]);
 
   const handleLogin = (u: User, selectedWorkshopId?: string) => {
     setCurrentUser(u);
@@ -105,17 +109,17 @@ const App: React.FC = () => {
   };
 
   const userPermissions = useMemo(() => {
-    if (currentUser?.id === SUPER_ADMIN_ID) return Object.values(Permission);
+    if (isSuperAdmin) return Object.values(Permission);
     const role = workshop?.roles.find(r => r.id === currentUser?.roleId);
     return role?.permissions || [];
-  }, [currentUser, workshop]);
+  }, [isSuperAdmin, currentUser, workshop]);
 
   const ProtectedRoute = ({ children, requiredPermission }: { children: React.ReactNode, requiredPermission?: Permission }) => {
     if (!currentUser) return <Navigate to="/login" replace />;
-    if (currentUser.id !== SUPER_ADMIN_ID && requiredPermission && !userPermissions.includes(requiredPermission)) {
+    if (!isSuperAdmin && requiredPermission && !userPermissions.includes(requiredPermission)) {
       return <Navigate to="/" replace />;
     }
-    if (currentUser.id === SUPER_ADMIN_ID && !activeWorkshopId && window.location.hash !== '#/central') {
+    if (isSuperAdmin && !activeWorkshopId && window.location.hash !== '#/central') {
        return <Navigate to="/central" replace />;
     }
     return <>{children}</>;
@@ -142,12 +146,13 @@ const App: React.FC = () => {
             
             <Route path="/central" element={
               <ProtectedRoute>
-                {currentUser?.id === SUPER_ADMIN_ID ? (
+                {isSuperAdmin ? (
                   <CentralControl 
                     workshops={workshops} 
                     setWorkshops={setWorkshops} 
                     users={globalUsers}
                     setUsers={setGlobalUsers}
+                    currentUser={currentUser}
                     onEnterWorkshop={(id) => setActiveWorkshopId(id)} 
                   />
                 ) : <Navigate to="/" />}
@@ -226,10 +231,10 @@ const App: React.FC = () => {
                   setUsers={(newUsers) => {
                     const updater = typeof newUsers === 'function' ? newUsers : () => newUsers;
                     const result = updater(workshopUsers);
-                    setGlobalUsers(prev => [
-                      ...prev.filter(u => u.workshopId !== currentWorkshopId || u.id === SUPER_ADMIN_ID),
-                      ...result
-                    ]);
+                    setGlobalUsers(prev => {
+                      const others = prev.filter(u => u.workshopId !== currentWorkshopId || u.workshopId === 'system');
+                      return [...others, ...result];
+                    });
                   }} 
                   roles={workshop?.roles || []}
                   setRoles={(r) => updateWorkshop({ roles: typeof r === 'function' ? r(workshop!.roles) : r })}
@@ -263,8 +268,12 @@ const Sidebar: React.FC<{
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(user.avatar || '');
   
-  const isPanda = user.id === SUPER_ADMIN_ID;
-  const perms = isPanda ? Object.values(Permission) : workshop?.roles.find(r => r.id === user.roleId)?.permissions || [];
+  useEffect(() => {
+    setAvatarUrl(user.avatar || '');
+  }, [user.avatar]);
+
+  const isSuperAdmin = user.workshopId === 'system';
+  const perms = isSuperAdmin ? Object.values(Permission) : workshop?.roles.find(r => r.id === user.roleId)?.permissions || [];
 
   const navItems = [
     { path: '/', label: 'Painel', icon: 'fa-gauge', perm: Permission.VIEW_DASHBOARD },
@@ -273,9 +282,9 @@ const Sidebar: React.FC<{
     { path: '/timetracker', label: 'Ponto Eletrônico', icon: 'fa-stopwatch', perm: Permission.VIEW_TIME_TRACKER },
   ];
 
-  const hasAdminAccess = isPanda || [Permission.MANAGE_STAFF, Permission.MANAGE_PARTS, Permission.MANAGE_ROLES, Permission.MANAGE_SETTINGS].some(p => perms.includes(p));
-  const canManageAnnouncements = isPanda || perms.includes(Permission.MANAGE_ANNOUNCEMENTS);
-  const canManageHR = isPanda || perms.includes(Permission.MANAGE_TIME_TRACKER);
+  const hasAdminAccess = isSuperAdmin || [Permission.MANAGE_STAFF, Permission.MANAGE_PARTS, Permission.MANAGE_ROLES, Permission.MANAGE_SETTINGS].some(p => perms.includes(p));
+  const canManageAnnouncements = isSuperAdmin || perms.includes(Permission.MANAGE_ANNOUNCEMENTS);
+  const canManageHR = isSuperAdmin || perms.includes(Permission.MANAGE_TIME_TRACKER);
 
   const handleAvatarSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -295,11 +304,11 @@ const Sidebar: React.FC<{
             </div>
           )}
           <h1 className="font-bold text-lg leading-tight tracking-tight uppercase truncate">
-            {workshop?.name || 'Sistema Central'}
+            {workshop?.settings.workshopName || workshop?.name || 'Sistema Central'}
           </h1>
         </div>
         
-        {isPanda && activeWorkshopId && (
+        {isSuperAdmin && activeWorkshopId && (
           <button 
             onClick={() => { onResetContext(); navigate('/central'); }}
             className="text-[10px] font-black text-primary hover:opacity-80 bg-primary/10 py-1.5 px-3 rounded-lg flex items-center justify-center transition-all border border-primary/20"
@@ -310,7 +319,7 @@ const Sidebar: React.FC<{
       </div>
 
       <nav className="flex-1 px-4 space-y-1 mt-2">
-        {isPanda && (
+        {isSuperAdmin && (
           <Link
             to="/central"
             className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${
@@ -324,10 +333,10 @@ const Sidebar: React.FC<{
           </Link>
         )}
 
-        {(workshop || isPanda) && activeWorkshopId && (
+        {(workshop || isSuperAdmin) && activeWorkshopId && (
           <div className="pt-4 space-y-1">
             <div className="px-4 pb-2 text-[10px] font-bold text-slate-600 uppercase tracking-widest">Oficina Atual</div>
-            {navItems.filter(item => isPanda || perms.includes(item.perm)).map((item) => (
+            {navItems.filter(item => isSuperAdmin || perms.includes(item.perm)).map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
@@ -395,10 +404,10 @@ const Sidebar: React.FC<{
               <i className="fa-solid fa-pen text-[10px] text-white"></i>
             </div>
           </button>
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden text-left">
             <p className="text-sm font-bold truncate text-slate-200">{user.name}</p>
             <p className="text-[10px] text-primary font-black uppercase tracking-widest truncate">
-              {isPanda ? 'Super Admin' : (workshop?.roles.find(r => r.id === user.roleId)?.name || 'Mecânico')}
+              {isSuperAdmin ? 'Super Admin' : (workshop?.roles.find(r => r.id === user.roleId)?.name || 'Mecânico')}
             </p>
           </div>
           <button 
