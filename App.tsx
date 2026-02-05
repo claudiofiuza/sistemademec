@@ -34,38 +34,28 @@ const App: React.FC = () => {
   const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_global_users_v4', INITIAL_USERS);
   const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v4', INITIAL_WORKSHOPS);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isBooting, setIsBooting] = useState(true);
-  const [showCloudConfig, setShowCloudConfig] = useState(false);
+  const [cloudStatus, setCloudStatus] = useState<'synced' | 'syncing' | 'error' | 'offline'>('synced');
   const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_workshop_id_v4', null);
 
   const triggerCloudSync = useCallback(async (newWorkshops?: Workshop[], newUsers?: User[]) => {
-    const config = getCloudConfig();
-    if (config.provider === 'none') return false;
-    setIsSyncing(true);
+    if (getCloudConfig().provider === 'none') return;
+    setCloudStatus('syncing');
     const success = await syncToCloud({
       workshops: newWorkshops || workshops,
       users: newUsers || globalUsers,
       lastUpdate: new Date().toISOString()
     });
-    setIsSyncing(false);
-    return success;
+    setCloudStatus(success ? 'synced' : 'error');
   }, [workshops, globalUsers]);
 
   const loadCloudData = useCallback(async () => {
     const config = getCloudConfig();
-    
-    // Se já temos dados locais, liberar a tela imediatamente (Optimistic UI)
-    const hasLocalData = workshops.length > 0 && globalUsers.length > 0;
-    if (hasLocalData) {
-      setIsBooting(false);
-    }
-
     if (config.provider === 'none') {
-      setIsBooting(false);
+      setCloudStatus('offline');
       return;
     }
 
-    setIsSyncing(true);
+    setCloudStatus('syncing');
     try {
       const data = await fetchFromCloud();
       if (data && data._isNew) {
@@ -73,18 +63,16 @@ const App: React.FC = () => {
       } else if (data && data.workshops && data.users) {
         setWorkshops(data.workshops);
         setGlobalUsers(data.users);
+        setCloudStatus('synced');
       }
     } catch (err) {
-      console.error("Cloud Fetch Error", err);
-    } finally {
-      setIsSyncing(false);
-      setIsBooting(false);
+      setCloudStatus('error');
     }
-  }, [setWorkshops, setGlobalUsers, triggerCloudSync, workshops.length, globalUsers.length]);
+  }, [setWorkshops, setGlobalUsers, triggerCloudSync]);
 
   useEffect(() => {
     loadCloudData();
-  }, [loadCloudData]);
+  }, []); // Só no mount
 
   const isSuperAdmin = useMemo(() => currentUser?.workshopId === 'system', [currentUser]);
   const currentWorkshopId = useMemo(() => isSuperAdmin ? activeWorkshopId : currentUser?.workshopId || null, [isSuperAdmin, currentUser, activeWorkshopId]);
@@ -108,15 +96,6 @@ const App: React.FC = () => {
     triggerCloudSync();
   };
 
-  if (isBooting) {
-    return (
-      <div className="h-screen w-full bg-slate-950 flex flex-col items-center justify-center">
-        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center text-slate-950 text-2xl animate-pulse mb-6"><i className="fa-solid fa-car-on"></i></div>
-        <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] animate-pulse">Sincronizando Sistema...</p>
-      </div>
-    );
-  }
-
   return (
     <HashRouter>
       <div className="flex h-screen w-full bg-slate-950 text-slate-100 overflow-hidden">
@@ -127,14 +106,13 @@ const App: React.FC = () => {
             activeWorkshopId={activeWorkshopId}
             onLogout={() => { setCurrentUser(null); setActiveWorkshopId(null); }}
             onResetContext={() => setActiveWorkshopId(null)}
-            isSyncing={isSyncing}
+            cloudStatus={cloudStatus}
             onManualSync={loadCloudData}
-            onOpenSettings={() => setShowCloudConfig(true)}
           />
         )}
-        <main className="flex-1 overflow-auto relative bg-slate-950">
+        <main className="flex-1 overflow-auto relative">
           <Routes>
-            <Route path="/login" element={currentUser ? <Navigate to="/" /> : <LoginPage users={globalUsers} workshops={workshops} onLogin={handleLogin} onOpenCloudConfig={() => setShowCloudConfig(true)} />} />
+            <Route path="/login" element={currentUser ? <Navigate to="/" /> : <LoginPage users={globalUsers} workshops={workshops} onLogin={handleLogin} onOpenCloudConfig={() => {}} />} />
             <Route path="/central" element={<ProtectedRoute><CentralControl workshops={workshops} setWorkshops={setWorkshops} users={globalUsers} setUsers={setGlobalUsers} currentUser={currentUser} onEnterWorkshop={setActiveWorkshopId} triggerSync={triggerCloudSync} /></ProtectedRoute>} />
             <Route path="/" element={<ProtectedRoute>{workshop ? <Dashboard user={currentUser!} history={workshop.history} parts={workshop.parts} settings={workshop.settings} announcements={workshop.announcements} workSessions={workshop.workSessions} /> : <Navigate to="/central" />}</ProtectedRoute>} />
             <Route path="/calculator" element={<ProtectedRoute requiredPermission={Permission.USE_CALCULATOR}><ServiceCalculator user={currentUser!} parts={workshop?.parts || []} settings={workshop?.settings || DEFAULT_SETTINGS} onSave={(record) => { const updatedHistory = [record, ...(workshop?.history || [])]; updateWorkshop({ history: updatedHistory }); const newUsers = globalUsers.map(u => u.id === record.mechanicId ? { ...u, pendingTax: (u.pendingTax || 0) + record.tax } : u); setGlobalUsers(newUsers); triggerCloudSync(undefined, newUsers); }} /></ProtectedRoute>} />
@@ -147,12 +125,11 @@ const App: React.FC = () => {
           </Routes>
         </main>
       </div>
-      {showCloudConfig && <CloudSetupModal onClose={() => setShowCloudConfig(false)} />}
     </HashRouter>
   );
 };
 
-const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopId: string | null, onLogout: () => void, onResetContext: () => void, isSyncing: boolean, onManualSync: () => void, onOpenSettings: () => void }> = ({ user, workshop, activeWorkshopId, onLogout, onResetContext, isSyncing, onManualSync, onOpenSettings }) => {
+const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopId: string | null, onLogout: () => void, onResetContext: () => void, cloudStatus: string, onManualSync: () => void }> = ({ user, workshop, activeWorkshopId, onLogout, onResetContext, cloudStatus, onManualSync }) => {
   const location = useLocation();
   const navigate = useNavigate();
   const isSuperAdmin = user.workshopId === 'system';
@@ -164,7 +141,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
     if (permission && !perms.includes(permission)) return null;
     const active = location.pathname === to;
     return (
-      <Link to={to} className={`flex items-center space-x-3 px-4 py-3.5 rounded-2xl transition-all ${active ? 'bg-primary text-slate-950 font-black shadow-lg shadow-primary/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
+      <Link to={to} className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all ${active ? 'bg-primary text-slate-950 font-black shadow-lg shadow-primary/20' : 'text-slate-400 hover:bg-slate-800 hover:text-white'}`}>
         <i className={`fa-solid ${icon} w-5 text-center`}></i>
         <span className="text-[10px] uppercase tracking-widest font-black">{label}</span>
       </Link>
@@ -177,7 +154,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
         <div className="flex items-center space-x-3 mb-6">
           <div className="w-10 h-10 rounded-2xl bg-primary flex items-center justify-center text-slate-950 text-xl shadow-lg shadow-primary/20"><i className="fa-solid fa-car"></i></div>
           <div className="overflow-hidden">
-            <h1 className="font-black text-sm text-white uppercase truncate tracking-tighter">{workshop?.settings.workshopName || 'LSC PRO'}</h1>
+            <h1 className="font-black text-sm text-white uppercase truncate tracking-tighter">{workshop?.settings.workshopName || (isSuperAdmin ? 'ADMINISTRAÇÃO' : 'CARREGANDO...')}</h1>
             <p className="text-[8px] text-slate-500 font-bold uppercase tracking-widest">Painel Operacional</p>
           </div>
         </div>
@@ -189,27 +166,37 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
       <nav className="flex-1 px-4 space-y-1 overflow-y-auto pb-6">
         {isSuperAdmin && <NavLink to="/central" icon="fa-microchip" label="Central de Controle" />}
         
-        {(workshop || isSuperAdmin) && activeWorkshopId && (
+        {/* Mostra o menu se houver oficina ou se for admin com oficina ativa */}
+        {(workshop || (isSuperAdmin && activeWorkshopId)) ? (
           <>
             <div className="px-4 py-4 text-[9px] font-black text-slate-600 uppercase tracking-[0.2em] mt-2">Principal</div>
             <NavLink to="/" icon="fa-gauge-high" label="Painel Geral" />
             <NavLink to="/calculator" icon="fa-calculator" label="Calculadora" permission={Permission.USE_CALCULATOR} />
-            <NavLink to="/history" icon="fa-clock-rotate-left" label="Logs de Atendimento" permission={Permission.VIEW_HISTORY} />
-            <NavLink to="/timetracker" icon="fa-stopwatch" label="Ponto Eletrônico" permission={Permission.VIEW_TIME_TRACKER} />
+            <NavLink to="/history" icon="fa-clock-rotate-left" label="Histórico" permission={Permission.VIEW_HISTORY} />
+            <NavLink to="/timetracker" icon="fa-stopwatch" label="Ponto" permission={Permission.VIEW_TIME_TRACKER} />
             
-            <div className="px-4 py-4 text-[9px] font-black text-slate-600 uppercase tracking-[0.2em] mt-4">Gestão Técnica</div>
-            <NavLink to="/hr" icon="fa-users-gear" label="Recursos Humanos (RH)" permission={Permission.MANAGE_TIME_TRACKER} />
-            <NavLink to="/announcements" icon="fa-bullhorn" label="Avisos e Comunicados" permission={Permission.MANAGE_ANNOUNCEMENTS} />
-            <NavLink to="/admin" icon="fa-screwdriver-wrench" label="Ajustes da Oficina" permission={Permission.MANAGE_SETTINGS} />
+            <div className="px-4 py-4 text-[9px] font-black text-slate-600 uppercase tracking-[0.2em] mt-4">Gestão</div>
+            <NavLink to="/hr" icon="fa-users-gear" label="Equipe / RH" permission={Permission.MANAGE_TIME_TRACKER} />
+            <NavLink to="/announcements" icon="fa-bullhorn" label="Avisos" permission={Permission.MANAGE_ANNOUNCEMENTS} />
+            <NavLink to="/admin" icon="fa-screwdriver-wrench" label="Ajustes" permission={Permission.MANAGE_SETTINGS} />
           </>
+        ) : isSuperAdmin && (
+          <div className="px-4 py-10 text-center space-y-4">
+             <i className="fa-solid fa-shop-slash text-slate-800 text-4xl block"></i>
+             <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Selecione uma oficina na Central para ver as ferramentas</p>
+             <Link to="/central" className="inline-block text-[10px] font-black text-primary underline uppercase tracking-widest">Ir para Central</Link>
+          </div>
         )}
       </nav>
 
       <div className="p-4 border-t border-slate-800 bg-slate-900/50">
-        <button onClick={onManualSync} className={`w-full mb-4 flex items-center justify-center gap-3 py-2.5 rounded-xl text-[9px] font-black uppercase tracking-widest border border-slate-800 transition-all ${isSyncing ? 'text-primary' : 'text-slate-500 hover:text-white hover:border-slate-700'}`}>
-          <i className={`fa-solid ${isSyncing ? 'fa-spinner animate-spin' : 'fa-cloud-check'}`}></i>
-          {isSyncing ? 'Sincronizando...' : 'Nuvem Conectada'}
-        </button>
+        <div className="flex items-center justify-between px-3 mb-4">
+           <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Status Nuvem</span>
+           <div className="flex items-center gap-2">
+              <span className={`w-2 h-2 rounded-full ${cloudStatus === 'synced' ? 'bg-emerald-500 shadow-[0_0_6px_var(--primary-color)]' : cloudStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'}`}></span>
+              <button onClick={onManualSync} className="text-[9px] font-black text-slate-500 uppercase hover:text-white transition-all">Sincronizar</button>
+           </div>
+        </div>
         
         <div className="flex items-center space-x-3 p-3 bg-slate-950 rounded-2xl border border-slate-800">
           <div className="relative">
@@ -227,50 +214,10 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
   );
 };
 
-const CloudSetupModal = ({ onClose }: { onClose: () => void }) => {
-  const [cfg, setCfg] = useState<CloudConfig>(getCloudConfig());
-  const handleSave = () => { saveCloudConfig(cfg); onClose(); window.location.reload(); };
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-black/95 backdrop-blur-md">
-      <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-[2.5rem] p-10 space-y-8 shadow-2xl">
-        <div>
-          <h3 className="text-xl font-black text-white uppercase italic tracking-tighter">Conexão Global LSC</h3>
-          <p className="text-slate-500 text-[10px] font-bold uppercase tracking-widest mt-1">Configure o destino dos dados</p>
-        </div>
-        <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 gap-1">
-          <button onClick={() => setCfg({...cfg, provider: 'gsheets'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${cfg.provider === 'gsheets' ? 'bg-primary text-slate-950 shadow-lg' : 'text-slate-500'}`}>GOOGLE DRIVE</button>
-          <button onClick={() => setCfg({...cfg, provider: 'github'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${cfg.provider === 'github' ? 'bg-primary text-slate-950 shadow-lg' : 'text-slate-500'}`}>GITHUB</button>
-          <button onClick={() => setCfg({...cfg, provider: 'none'})} className={`flex-1 py-2.5 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all ${cfg.provider === 'none' ? 'bg-slate-700 text-white shadow-lg' : 'text-slate-500'}`}>OFFLINE</button>
-        </div>
-        <div className="space-y-4">
-          {cfg.provider === 'gsheets' && (
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">Script URL</label>
-              <input type="text" value={cfg.gsheetsUrl || ''} onChange={e => setCfg({...cfg, gsheetsUrl: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white text-xs outline-none focus:ring-1 ring-primary" placeholder="https://script.google.com/macros/s/.../exec" />
-            </div>
-          )}
-          {cfg.provider === 'github' && (
-            <>
-              <input type="password" value={cfg.githubToken || ''} onChange={e => setCfg({...cfg, githubToken: e.target.value})} className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white font-mono text-xs" placeholder="Token GitHub..." />
-              <div className="grid grid-cols-2 gap-4">
-                <input type="text" value={cfg.githubOwner || ''} onChange={e => setCfg({...cfg, githubOwner: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-white text-xs" placeholder="Usuário" />
-                <input type="text" value={cfg.githubRepo || ''} onChange={e => setCfg({...cfg, githubRepo: e.target.value})} className="bg-slate-800 border border-slate-700 rounded-xl p-4 text-white text-xs" placeholder="Repo" />
-              </div>
-            </>
-          )}
-        </div>
-        <div className="flex gap-4">
-          <button onClick={handleSave} className="flex-1 bg-primary text-slate-950 font-black py-4 rounded-2xl text-xs uppercase tracking-widest shadow-xl shadow-primary/20">Salvar e Reiniciar</button>
-          <button onClick={onClose} className="px-6 bg-slate-800 text-slate-400 font-bold rounded-2xl text-xs uppercase">Sair</button>
-        </div>
-      </div>
-    </div>
-  );
-};
-
 const ProtectedRoute = ({ children, requiredPermission }: { children: React.ReactNode, requiredPermission?: Permission }) => { 
-  const userStr = localStorage.getItem('lsc_current_user_v4'); 
-  if (!userStr) return <Navigate to="/login" replace />; 
+  const userStr = localStorage.getItem('lsc_global_users_v4'); 
+  const currentUserStr = localStorage.getItem('lsc_current_user_v4');
+  if (!currentUserStr) return <Navigate to="/login" replace />; 
   return <>{children}</>; 
 };
 
