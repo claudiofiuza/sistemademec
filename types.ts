@@ -57,6 +57,16 @@ export interface WorkSession {
   status: 'active' | 'paused' | 'completed';
 }
 
+export interface SettlementRecord {
+  id: string;
+  mechanicId: string;
+  mechanicName: string;
+  amount: number;
+  settledById: string;
+  settledByName: string;
+  timestamp: number;
+}
+
 export interface ServiceRecord {
   id: string;
   mechanicId: string;
@@ -102,4 +112,5 @@ export interface Workshop {
   history: ServiceRecord[];
   announcements: Announcement[];
   workSessions: WorkSession[];
+  settlements?: SettlementRecord[]; // History of debt settlements
 }

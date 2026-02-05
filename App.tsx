@@ -257,6 +257,9 @@ const App: React.FC = () => {
                     triggerCloudSync(undefined, res);
                   }}
                   settings={workshop?.settings || DEFAULT_SETTINGS}
+                  workshop={workshop}
+                  onUpdateWorkshop={updateWorkshop}
+                  currentUser={currentUser}
                 />
               </ProtectedRoute>
             } />
