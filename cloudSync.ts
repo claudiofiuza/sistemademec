@@ -4,7 +4,7 @@ import { CloudConfig } from './types';
 // ==========================================
 // COLE A URL DO SEU GOOGLE APPS SCRIPT AQUI:
 // ==========================================
-const GLOBAL_GSHEETS_URL = ""; 
+const GLOBAL_GSHEETS_URL = "https://script.google.com/macros/s/AKfycbxWEq_7VvsF1kRl77ACpQBnRwYGTltuwPzYns1fjn_7h_aIgpTy-AAFJk4WWB3ZT34/exec"; 
 
 export const saveCloudConfig = (config: CloudConfig) => {
   localStorage.setItem('lsc_cloud_config_v4', JSON.stringify(config));
