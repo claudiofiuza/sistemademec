@@ -10,7 +10,7 @@ export interface SyncConfig {
 export const CLOUD_CONFIG: SyncConfig = {
   // ATENÇÃO: Se este token foi exposto publicamente, o GitHub pode tê-lo revogado. 
   // Caso o erro persista, gere um novo token (Classic) com escopo 'repo' no GitHub.
-  token: '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',
+  token: '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',
   owner: 'claudiofiuza', 
   repo: 'lsc-pro-db',    
   path: 'database.json'
