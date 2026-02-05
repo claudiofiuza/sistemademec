@@ -36,30 +36,34 @@ const App: React.FC = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isBooting, setIsBooting] = useState(true);
   const [bootStatus, setBootStatus] = useState('Iniciando sistemas...');
+  const [bootError, setBootError] = useState<string | null>(null);
   
   const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_workshop_id_v4', null);
 
-  // Sincronização automática com a nuvem ao carregar o app (Boot)
   const loadCloudData = useCallback(async () => {
     setIsSyncing(true);
-    setBootStatus('Sincronizando com a Nuvem LSC...');
+    setBootError(null);
+    setBootStatus('Conectando ao Banco de Dados Nuvem...');
     
     try {
       const data = await fetchFromCloud();
       if (data && data.workshops && data.users) {
         setWorkshops(data.workshops);
         setGlobalUsers(data.users);
-        setBootStatus('Banco de dados atualizado!');
+        setBootStatus('Sincronização concluída com sucesso!');
+        setTimeout(() => setIsBooting(false), 800);
       } else {
-        setBootStatus('Usando base de dados local...');
+        // Se a nuvem retornar null, pode ser a primeira vez ou erro de token
+        setBootStatus('Atenção: Servidor de nuvem não respondeu.');
+        setBootError('Não foi possível carregar os usuários da nuvem. Verifique o Token ou a conexão.');
+        // Permitir entrar após 3 segundos mesmo com erro (modo offline)
+        setTimeout(() => setIsBooting(false), 3000);
       }
     } catch (err) {
-      setBootStatus('Erro de conexão. Modo offline ativado.');
+      setBootError('Erro crítico de rede. Verifique seu firewall ou internet.');
+      setTimeout(() => setIsBooting(false), 3000);
     } finally {
-      setTimeout(() => {
-        setIsSyncing(false);
-        setIsBooting(false);
-      }, 1000); // Delay suave para UX
+      setIsSyncing(false);
     }
   }, [setWorkshops, setGlobalUsers]);
 
@@ -69,11 +73,14 @@ const App: React.FC = () => {
 
   const triggerCloudSync = useCallback(async (newWorkshops?: Workshop[], newUsers?: User[]) => {
     setIsSyncing(true);
-    await syncToCloud({
+    const success = await syncToCloud({
       workshops: newWorkshops || workshops,
       users: newUsers || globalUsers,
       lastUpdate: new Date().toISOString()
     });
+    if (!success) {
+      console.error("Falha ao salvar na nuvem. Dados salvos apenas localmente.");
+    }
     setIsSyncing(false);
   }, [workshops, globalUsers]);
 
@@ -176,9 +183,14 @@ const App: React.FC = () => {
           <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
             <div className="h-full bg-primary animate-[shimmer_2s_infinite] w-[40%]"></div>
           </div>
-          <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] animate-pulse">
+          <p className={`text-[10px] font-black uppercase tracking-[0.3em] ${bootError ? 'text-red-500' : 'text-primary animate-pulse'}`}>
             {bootStatus}
           </p>
+          {bootError && (
+            <p className="text-[9px] text-slate-500 font-bold bg-red-500/10 p-3 rounded-xl border border-red-500/20">
+              {bootError}
+            </p>
+          )}
         </div>
 
         <div className="fixed bottom-10 text-center opacity-30">
