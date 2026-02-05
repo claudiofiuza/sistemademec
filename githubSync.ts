@@ -6,11 +6,10 @@ export interface SyncConfig {
   path: string;
 }
 
-// Configurações globais embutidas para sincronização
+// Configurações globais de sincronização
 export const CLOUD_CONFIG: SyncConfig = {
-  // ATENÇÃO: Se este token foi exposto publicamente, o GitHub pode tê-lo revogado. 
-  // Caso o erro persista, gere um novo token (Classic) com escopo 'repo' no GitHub.
-  token: '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',
+  // CERTIFIQUE-SE DE QUE O TOKEN ABAIXO SEJA O NOVO QUE VOCÊ GEROU
+  token: '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',
   owner: 'claudiofiuza', 
   repo: 'lsc-pro-db',    
   path: 'database.json'
@@ -37,7 +36,6 @@ export const syncToCloud = async (data: any) => {
       sha = fileData.sha;
     }
 
-    // Encoding UTF-8 seguro para Base64
     const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
     
     const putRes = await fetch(url, {
@@ -48,7 +46,7 @@ export const syncToCloud = async (data: any) => {
         'Accept': 'application/vnd.github.v3+json'
       },
       body: JSON.stringify({
-        message: `Cloud Sync: ${new Date().toISOString()}`,
+        message: `Cloud Update: ${new Date().toLocaleString()}`,
         content,
         sha: sha || undefined
       })
@@ -56,12 +54,11 @@ export const syncToCloud = async (data: any) => {
 
     if (!putRes.ok) {
       const err = await putRes.json();
-      console.error("Erro no PUT do GitHub:", err);
+      console.error("Falha no GitHub PUT:", err);
     }
-
     return putRes.ok;
   } catch (error) {
-    console.error("Erro crítico na sincronização Cloud:", error);
+    console.error("Erro crítico Cloud Sync:", error);
     return false;
   }
 };
@@ -70,7 +67,6 @@ export const fetchFromCloud = async () => {
   const { token, owner, repo, path } = CLOUD_CONFIG;
   if (!token || token.includes('SEU_TOKEN')) return null;
 
-  // Cache-busting agressivo para evitar dados antigos
   const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?nocache=${Date.now()}`;
   
   try {
@@ -82,20 +78,20 @@ export const fetchFromCloud = async () => {
       }
     });
     
-    if (!res.ok) {
-      if (res.status === 404) console.warn("Banco de dados não encontrado no GitHub. Criando um novo ao salvar.");
-      return null;
+    // Se o arquivo não existir (404), retornamos um objeto vazio indicando "Novo Banco"
+    if (res.status === 404) {
+      return { _isNew: true };
     }
     
-    const fileData = await res.json();
+    if (!res.ok) return null;
     
-    // IMPORTANTE: GitHub adiciona \n no base64 de arquivos grandes. Precisamos remover.
+    const fileData = await res.json();
     const cleanBase64 = fileData.content.replace(/\s/g, '');
     const content = decodeURIComponent(escape(atob(cleanBase64)));
     
     return JSON.parse(content);
   } catch (error) {
-    console.error("Erro ao buscar dados Cloud:", error);
+    console.error("Erro fetch Cloud:", error);
     return null;
   }
 };
