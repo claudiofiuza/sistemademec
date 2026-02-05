@@ -1,6 +1,6 @@
 
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { WorkSession, User, AppSettings } from '../types';
+import { WorkSession, User, AppSettings, SettlementRecord, Workshop } from '../types';
 
 interface HRProps {
   sessions: WorkSession[];
@@ -8,6 +8,9 @@ interface HRProps {
   users: User[];
   setUsers: React.Dispatch<React.SetStateAction<User[]>>;
   settings: AppSettings;
+  workshop?: Workshop | null;
+  onUpdateWorkshop?: (updated: Partial<Workshop>) => void;
+  currentUser?: User | null;
 }
 
 const formatDuration = (ms: number) => {
@@ -31,9 +34,11 @@ const calculateSessionTime = (session: WorkSession, currentNow: number) => {
   return Math.max(0, total);
 };
 
-const HumanResources: React.FC<HRProps> = ({ sessions, onUpdateSessions, users, setUsers, settings }) => {
+const HumanResources: React.FC<HRProps> = ({ 
+  sessions, onUpdateSessions, users, setUsers, settings, workshop, onUpdateWorkshop, currentUser 
+}) => {
   const [now, setNow] = useState(Date.now());
-  const [activeSubTab, setActiveSubTab] = useState<'audit' | 'finance'>('audit');
+  const [activeSubTab, setActiveSubTab] = useState<'audit' | 'finance' | 'settlement_history'>('audit');
   const [filterPeriod, setFilterPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -112,11 +117,36 @@ const HumanResources: React.FC<HRProps> = ({ sessions, onUpdateSessions, users, 
     onUpdateSessions(sessions.map(s => s.id === session.id ? updated : s));
   };
 
-  const handleSettleTax = (userId: string) => {
-    if (window.confirm("Confirmar pagamento de imposto e zerar saldo?")) {
-      setUsers(prev => prev.map(u => u.id === userId ? { ...u, pendingTax: 0 } : u));
+  const handleSettleTax = (userToSettle: User) => {
+    const amount = userToSettle.pendingTax || 0;
+    if (amount <= 0) return;
+
+    if (window.confirm(`Confirmar recebimento de ${settings.currencySymbol} ${amount.toLocaleString()} de ${userToSettle.name}?`)) {
+      const settlement: SettlementRecord = {
+        id: 'set_' + Math.random().toString(36).substr(2, 9),
+        mechanicId: userToSettle.id,
+        mechanicName: userToSettle.name,
+        amount: amount,
+        settledById: currentUser?.id || 'sys',
+        settledByName: currentUser?.name || 'Administrador',
+        timestamp: Date.now()
+      };
+
+      // 1. Update user to zero tax
+      setUsers(prev => prev.map(u => u.id === userToSettle.id ? { ...u, pendingTax: 0 } : u));
+      
+      // 2. Add to settlement history
+      if (onUpdateWorkshop && workshop) {
+        onUpdateWorkshop({ 
+          settlements: [settlement, ...(workshop.settlements || [])] 
+        });
+      }
     }
   };
+
+  const settlementHistory = useMemo(() => {
+    return [...(workshop?.settlements || [])].sort((a, b) => b.timestamp - a.timestamp);
+  }, [workshop?.settlements]);
 
   return (
     <div className="p-8 max-w-6xl mx-auto space-y-10 pb-20">
@@ -128,18 +158,24 @@ const HumanResources: React.FC<HRProps> = ({ sessions, onUpdateSessions, users, 
           </h2>
           <p className="text-slate-400">Controle de ponto e gestão financeira da equipe.</p>
         </div>
-        <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 gap-1">
+        <div className="flex bg-slate-900 p-1 rounded-xl border border-slate-800 gap-1 overflow-x-auto">
           <button 
             onClick={() => setActiveSubTab('audit')}
-            className={`px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeSubTab === 'audit' ? 'bg-primary text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}
+            className={`px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeSubTab === 'audit' ? 'bg-primary text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}
           >
             Auditoria de Ponto
           </button>
           <button 
             onClick={() => setActiveSubTab('finance')}
-            className={`px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${activeSubTab === 'finance' ? 'bg-primary text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}
+            className={`px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeSubTab === 'finance' ? 'bg-primary text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}
           >
             Gestão Financeira
+          </button>
+          <button 
+            onClick={() => setActiveSubTab('settlement_history')}
+            className={`px-5 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all whitespace-nowrap ${activeSubTab === 'settlement_history' ? 'bg-primary text-slate-950 shadow-lg' : 'text-slate-500 hover:text-white'}`}
+          >
+            Histórico de Pagos
           </button>
         </div>
       </header>
@@ -321,7 +357,7 @@ const HumanResources: React.FC<HRProps> = ({ sessions, onUpdateSessions, users, 
                         </td>
                         <td className="px-8 py-6 text-right">
                           <button 
-                            onClick={() => handleSettleTax(u.id)}
+                            onClick={() => handleSettleTax(u)}
                             disabled={tax === 0}
                             className={`px-6 py-3 rounded-2xl font-black uppercase tracking-widest text-[10px] transition-all ${
                               tax > 0 
@@ -344,6 +380,57 @@ const HumanResources: React.FC<HRProps> = ({ sessions, onUpdateSessions, users, 
             
             <div className="p-6 bg-primary/5 border-t border-slate-800 text-[10px] font-bold text-slate-500 text-center uppercase tracking-widest">
               Dica: O imposto é acumulado automaticamente a cada atendimento finalizado na calculadora.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeSubTab === 'settlement_history' && (
+        <div className="space-y-8 animate-in fade-in duration-300">
+           <div className="bg-slate-900 border border-slate-800 rounded-[2.5rem] overflow-hidden shadow-2xl">
+            <div className="p-8 border-b border-slate-800 flex justify-between items-center bg-slate-800/20">
+              <h3 className="text-xl font-black text-white uppercase tracking-tighter">Histórico de Liquidações</h3>
+              <div className="bg-primary/10 text-primary border border-primary/20 px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest">
+                Registros de Tesouraria
+              </div>
+            </div>
+            
+            <div className="overflow-x-auto">
+              <table className="w-full text-left">
+                <thead className="bg-slate-800/40 text-[10px] uppercase font-black tracking-widest text-slate-500 border-b border-slate-800">
+                  <tr>
+                    <th className="px-8 py-6">Mecânico</th>
+                    <th className="px-8 py-6">Data/Hora</th>
+                    <th className="px-8 py-6">Valor Pago</th>
+                    <th className="px-8 py-6 text-right">Processado por</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800">
+                  {settlementHistory.map(record => (
+                    <tr key={record.id} className="hover:bg-slate-800/10 transition-colors">
+                      <td className="px-8 py-6">
+                         <span className="font-bold text-white">{record.mechanicName}</span>
+                         <span className="text-[9px] text-slate-600 block uppercase font-black">{record.mechanicId}</span>
+                      </td>
+                      <td className="px-8 py-6 text-slate-400 font-mono text-xs">
+                        {new Date(record.timestamp).toLocaleString()}
+                      </td>
+                      <td className="px-8 py-6 font-black text-primary font-mono text-lg">
+                        {settings.currencySymbol} {record.amount.toLocaleString()}
+                      </td>
+                      <td className="px-8 py-6 text-right">
+                         <div className="flex flex-col items-end">
+                            <span className="text-slate-300 font-bold text-xs">{record.settledByName}</span>
+                            <span className="text-[9px] text-slate-600 font-black uppercase italic">ID: {record.settledById}</span>
+                         </div>
+                      </td>
+                    </tr>
+                  ))}
+                  {settlementHistory.length === 0 && (
+                    <tr><td colSpan={4} className="px-8 py-20 text-center text-slate-600 italic">Nenhum histórico de pagamento registrado ainda.</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

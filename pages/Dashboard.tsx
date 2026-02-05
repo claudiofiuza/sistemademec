@@ -35,17 +35,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
     return workSessions.find(s => s.mechanicId === user.id && s.status !== 'completed');
   }, [workSessions, user.id]);
 
+  // dashboard now exclusively shows user's own data
   const displayHistory = useMemo(() => {
-    if (user.roleId === 'r_admin' || user.id === 'u1') return history;
     return history.filter(r => r.mechanicId === user.id);
-  }, [history, user]);
+  }, [history, user.id]);
 
   const totalRevenue = displayHistory.reduce((sum, r) => sum + r.finalPrice, 0);
   const totalTax = displayHistory.reduce((sum, r) => sum + r.tax, 0);
   const totalServices = displayHistory.length;
   
   const recentActivity = displayHistory.slice(0, 5);
-  const statsScopeLabel = (user.roleId === 'r_admin' || user.id === 'u1') ? "Oficina" : "Pessoais";
 
   const calculateTotalTime = (session: WorkSession, currentNow: number) => {
     let total = 0;
@@ -71,7 +70,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
           <div className="flex items-center gap-3 mt-1">
             <span className="text-slate-400 font-medium">Bem-vindo, <span className="text-primary font-bold">{user.name}</span></span>
             <span className="w-1 h-1 rounded-full bg-slate-700"></span>
-            <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-500 uppercase tracking-widest font-black border border-slate-800">Visualização: {statsScopeLabel}</span>
+            <span className="text-[10px] bg-slate-900 px-2 py-0.5 rounded text-slate-500 uppercase tracking-widest font-black border border-slate-800 italic">Resumo Individual</span>
           </div>
         </div>
         
@@ -88,7 +87,6 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
         )}
       </header>
 
-      {/* Announcements */}
       {relevantAnnouncements.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center gap-3 px-1">
@@ -134,27 +132,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
         </div>
       )}
 
-      {/* Statistics */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Receita Bruta" value={`${settings.currencySymbol} ${totalRevenue.toLocaleString()}`} icon="fa-money-bill-trend-up" color="bg-primary" />
-        <StatCard title="Total Serviços" value={totalServices.toString()} icon="fa-wrench" color="bg-blue-500" />
+        <StatCard title="Minha Receita" value={`${settings.currencySymbol} ${totalRevenue.toLocaleString()}`} icon="fa-money-bill-trend-up" color="bg-primary" />
+        <StatCard title="Meus Atendimentos" value={totalServices.toString()} icon="fa-wrench" color="bg-blue-500" />
         <StatCard title="Ticket Médio" value={`${settings.currencySymbol} ${totalServices > 0 ? (totalRevenue / totalServices).toLocaleString(undefined, {maximumFractionDigits: 0}) : 0}`} icon="fa-chart-line" color="bg-purple-500" />
-        <StatCard title="Imposto Estimado" value={`${settings.currencySymbol} ${totalTax.toLocaleString()}`} icon="fa-receipt" color="bg-amber-500" />
+        <StatCard title="Imposto Gerado" value={`${settings.currencySymbol} ${totalTax.toLocaleString()}`} icon="fa-receipt" color="bg-amber-500" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-4">
           <h3 className="text-xl font-bold flex items-center px-1 text-slate-100">
             <i className="fa-solid fa-clock-rotate-left mr-3 text-slate-600"></i>
-            Atividade Recente
+            Minha Atividade Recente
           </h3>
           <div className="bg-slate-900/50 border border-slate-800 rounded-[2rem] overflow-hidden shadow-2xl backdrop-blur-sm">
             <table className="w-full text-left">
               <thead className="bg-slate-800/40 border-b border-slate-800 text-slate-500 text-[10px] uppercase font-black tracking-widest">
                 <tr>
                   <th className="px-6 py-5">Cliente</th>
-                  <th className="px-6 py-5">Atendente</th>
-                  <th className="px-6 py-5">Total</th>
+                  <th className="px-6 py-5">Autorizador</th>
+                  <th className="px-6 py-5">Valor Final</th>
                   <th className="px-6 py-5 text-right">Horário</th>
                 </tr>
               </thead>
@@ -162,7 +159,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
                 {recentActivity.map((record) => (
                   <tr key={record.id} className="hover:bg-slate-800/20 transition-all group">
                     <td className="px-6 py-5 font-bold text-slate-200 group-hover:text-white">{record.customerName}</td>
-                    <td className="px-6 py-5 text-slate-400 text-sm">{record.mechanicName}</td>
+                    <td className="px-6 py-5 text-slate-400 text-sm italic">{record.authorizedBy}</td>
                     <td className="px-6 py-5 text-primary font-black">{settings.currencySymbol} {record.finalPrice.toLocaleString()}</td>
                     <td className="px-6 py-5 text-right text-slate-600 font-mono text-xs">
                       {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -170,7 +167,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
                   </tr>
                 ))}
                 {recentActivity.length === 0 && (
-                  <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-600 italic">Sem registros para o período.</td></tr>
+                  <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-600 italic">Nenhum atendimento pessoal registrado.</td></tr>
                 )}
               </tbody>
             </table>
@@ -184,8 +181,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
             <ActionCard to="/timetracker" label="Ponto Eletrônico" desc="Gerenciar seu turno" icon="fa-stopwatch" color="slate" />
             <div className="p-8 bg-gradient-to-br from-primary to-emerald-600 rounded-[2.5rem] text-slate-950 relative overflow-hidden group shadow-2xl">
               <div className="relative z-10">
-                <h4 className="text-2xl font-black uppercase tracking-tighter leading-none">Estetica &<br/>Performance</h4>
-                <p className="text-slate-950/70 text-sm mt-3 font-bold leading-tight">O padrão de qualidade LSC Pro em cada parafuso.</p>
+                <h4 className="text-2xl font-black uppercase tracking-tighter leading-none">Minha Performance</h4>
+                <p className="text-slate-950/70 text-sm mt-3 font-bold leading-tight">Mantenha o padrão LSC Pro em cada atendimento.</p>
               </div>
               <i className="fa-solid fa-gauge-high absolute -right-6 -bottom-6 text-9xl text-slate-950/10 rotate-12 transition-transform group-hover:scale-110"></i>
             </div>
