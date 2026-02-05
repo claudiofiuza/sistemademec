@@ -34,20 +34,34 @@ const App: React.FC = () => {
   const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_global_users_v4', INITIAL_USERS);
   const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v4', INITIAL_WORKSHOPS);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isBooting, setIsBooting] = useState(true);
+  const [bootStatus, setBootStatus] = useState('Iniciando sistemas...');
   
   const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_workshop_id_v4', null);
 
-  // Sincronização automática com a nuvem ao carregar o app
+  // Sincronização automática com a nuvem ao carregar o app (Boot)
   const loadCloudData = useCallback(async () => {
     setIsSyncing(true);
-    const data = await fetchFromCloud();
-    if (data && data.workshops && data.users) {
-      setWorkshops(data.workshops);
-      setGlobalUsers(data.users);
-      console.log("Nuvem sincronizada com sucesso.");
+    setBootStatus('Sincronizando com a Nuvem LSC...');
+    
+    try {
+      const data = await fetchFromCloud();
+      if (data && data.workshops && data.users) {
+        setWorkshops(data.workshops);
+        setGlobalUsers(data.users);
+        setBootStatus('Banco de dados atualizado!');
+      } else {
+        setBootStatus('Usando base de dados local...');
+      }
+    } catch (err) {
+      setBootStatus('Erro de conexão. Modo offline ativado.');
+    } finally {
+      setTimeout(() => {
+        setIsSyncing(false);
+        setIsBooting(false);
+      }, 1000); // Delay suave para UX
     }
-    setIsSyncing(false);
-  }, []);
+  }, [setWorkshops, setGlobalUsers]);
 
   useEffect(() => {
     loadCloudData();
@@ -146,6 +160,40 @@ const App: React.FC = () => {
     }
     return <>{children}</>;
   };
+
+  if (isBooting) {
+    return (
+      <div className="h-screen w-full bg-slate-950 flex flex-col items-center justify-center p-10">
+        <div className="relative mb-12">
+          <div className="w-24 h-24 rounded-3xl bg-primary flex items-center justify-center text-slate-950 text-4xl shadow-[0_0_50px_rgba(var(--primary-color-rgb),0.3)] animate-pulse">
+            <i className="fa-solid fa-car-on"></i>
+          </div>
+          <div className="absolute inset-0 w-24 h-24 rounded-3xl border-4 border-primary/20 animate-ping"></div>
+        </div>
+        
+        <div className="text-center space-y-4 max-w-sm w-full">
+          <h2 className="text-2xl font-black text-white uppercase tracking-tighter italic">LSC PRO SYSTEM</h2>
+          <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden border border-slate-800">
+            <div className="h-full bg-primary animate-[shimmer_2s_infinite] w-[40%]"></div>
+          </div>
+          <p className="text-[10px] font-black text-primary uppercase tracking-[0.3em] animate-pulse">
+            {bootStatus}
+          </p>
+        </div>
+
+        <div className="fixed bottom-10 text-center opacity-30">
+           <p className="text-[8px] text-slate-600 font-black uppercase tracking-[0.5em]">Establishing Secure Connection to GitHub Services</p>
+        </div>
+
+        <style>{`
+          @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(300%); }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <HashRouter>
