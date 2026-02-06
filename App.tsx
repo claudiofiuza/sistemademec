@@ -14,7 +14,7 @@ import AnnouncementsManager from './pages/AnnouncementsManager';
 import TimeTracker from './pages/TimeTracker';
 import HumanResources from './pages/HumanResources';
 
-// Componente de Proteção de Rota (Isolado para estabilidade)
+// Componente de Proteção de Rota
 const ProtectedRoute: React.FC<{ children: React.ReactNode, user: User | null, requiredPermission?: Permission, workshop: Workshop | null }> = ({ children, user, requiredPermission, workshop }) => {
   if (!user) return <Navigate to="/login" replace />;
   if (requiredPermission && user.workshopId !== 'system') {
@@ -35,7 +35,11 @@ const usePersistedState = <T,>(key: string, defaultValue: T): [T, React.Dispatch
     }
   });
   useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(state));
+    try {
+      localStorage.setItem(key, JSON.stringify(state));
+    } catch (e) {
+      console.error("Persist error:", e);
+    }
   }, [key, state]);
   return [state, setState];
 };
@@ -59,11 +63,11 @@ const App: React.FC = () => {
   const currentWorkshopId = isSuperAdmin ? activeWorkshopId : currentUser?.workshopId || null;
   const workshop = useMemo(() => workshops.find(w => w.id === currentWorkshopId) || null, [workshops, currentWorkshopId]);
 
-  // Aplicação da cor primária no CSS Root
+  // Aplicar cor primária
   useEffect(() => {
-    const color = workshop?.settings.primaryColor || DEFAULT_SETTINGS.primaryColor;
+    const color = workshop?.settings?.primaryColor || DEFAULT_SETTINGS.primaryColor;
     document.documentElement.style.setProperty('--primary-color', color);
-  }, [workshop?.settings.primaryColor]);
+  }, [workshop?.settings?.primaryColor]);
 
   const syncData = useCallback(async (ws?: Workshop[], us?: User[]) => {
     setIsSyncing(true);
@@ -79,33 +83,33 @@ const App: React.FC = () => {
   }, []);
 
   const loadData = useCallback(async () => {
+    // Timeout de segurança: Se em 3 segundos não carregar, libera a tela
+    const safetyTimeout = setTimeout(() => {
+      setIsBooting(false);
+      setDbStatus('offline');
+    }, 3000);
+
     try {
       const data = await fetchFromSupabase();
-      if (data) {
-        if (data._isEmpty) {
-          setDbStatus('online');
-          await syncData(INITIAL_WORKSHOPS, INITIAL_USERS);
-        } else if (data.workshops && data.users) {
-          setWorkshops(data.workshops);
-          setGlobalUsers(data.users);
-          setDbStatus('online');
-        }
-      } else {
-        setDbStatus('offline');
+      if (data && !data._isEmpty) {
+        if (data.workshops) setWorkshops(data.workshops);
+        if (data.users) setGlobalUsers(data.users);
+        setDbStatus('online');
+      } else if (data?._isEmpty) {
+        setDbStatus('online');
+        await syncData(INITIAL_WORKSHOPS, INITIAL_USERS);
       }
     } catch (e) {
-      console.error("Erro no carregamento:", e);
+      console.error("Load error:", e);
+      setDbStatus('error');
     } finally {
+      clearTimeout(safetyTimeout);
       setIsBooting(false);
     }
   }, [setWorkshops, setGlobalUsers, syncData]);
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') loadData();
-    }, 60000); 
-    return () => clearInterval(interval);
   }, [loadData]);
 
   const workshopUsers = useMemo(() => 
@@ -137,7 +141,7 @@ const App: React.FC = () => {
         <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center text-slate-900 text-3xl">
           <i className="fa-solid fa-car animate-bounce"></i>
         </div>
-        <p className="text-[10px] font-black uppercase tracking-[0.5em] mt-8 text-primary animate-pulse">Sincronizando Sistema...</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.5em] mt-8 text-primary animate-pulse">Iniciando LSC Pro...</p>
       </div>
     );
   }
@@ -210,7 +214,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
             <i className="fa-solid fa-car"></i>
           </div>
           <div className="overflow-hidden text-left">
-            <h1 className="font-black text-xs text-white uppercase truncate italic leading-none">{workshop?.settings.workshopName || 'ADMIN'}</h1>
+            <h1 className="font-black text-xs text-white uppercase truncate italic leading-none">{workshop?.settings?.workshopName || 'ADMIN'}</h1>
             <p className="text-[8px] text-primary font-black uppercase tracking-widest mt-1 opacity-60">SISTEMA ATIVO</p>
           </div>
         </div>
