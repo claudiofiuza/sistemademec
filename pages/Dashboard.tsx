@@ -28,21 +28,21 @@ const Dashboard: React.FC<DashboardProps> = ({ user, globalUsers, history, setti
   }, []);
 
   const relevantAnnouncements = useMemo(() => {
-    return (announcements || []).filter(ann => ann.targetUserId === 'all' || ann.targetUserId === user.id);
+    return announcements.filter(ann => ann.targetUserId === 'all' || ann.targetUserId === user.id);
   }, [announcements, user]);
 
   const activeSession = useMemo(() => {
-    return (workSessions || []).find(s => s.mechanicId === user.id && s.status !== 'completed');
+    return workSessions.find(s => s.mechanicId === user.id && s.status !== 'completed');
   }, [workSessions, user.id]);
 
   const displayHistory = useMemo(() => {
-    return (history || []).filter(r => r.mechanicId === user.id).slice(0, 10);
+    return history.filter(r => r.mechanicId === user.id).slice(0, 10);
   }, [history, user.id]);
 
-  const totalRevenue = (history || []).filter(r => r.mechanicId === user.id).reduce((sum, r) => sum + r.finalPrice, 0);
-  const totalServices = (history || []).filter(r => r.mechanicId === user.id).length;
+  const totalRevenue = history.filter(r => r.mechanicId === user.id).reduce((sum, r) => sum + r.finalPrice, 0);
+  const totalServices = history.filter(r => r.mechanicId === user.id).length;
   
-  const currentDbUser = (globalUsers || []).find(u => u.id === user.id);
+  const currentDbUser = globalUsers.find(u => u.id === user.id);
   const pendingTax = currentDbUser?.pendingTax || 0;
 
   const calculateTotalTime = (session: WorkSession, currentNow: number) => {
@@ -53,14 +53,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, globalUsers, history, setti
       const lastPause = session.pauses[session.pauses.length - 1];
       total = lastPause.start - session.startTime;
     }
-    (session.pauses || []).forEach(p => { if (p.end) total -= (p.end - p.start); });
+    session.pauses.forEach(p => { if (p.end) total -= (p.end - p.start); });
     return Math.max(0, total);
   };
 
   const currentDuration = activeSession ? calculateTotalTime(activeSession, now) : 0;
 
   return (
-    <div className="p-8 space-y-8 fade-in">
+    <div className="p-8 space-y-8 animate-in fade-in duration-500">
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
         <div className="text-left">
           <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none">{settings.workshopName}</h2>
@@ -86,8 +86,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, globalUsers, history, setti
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-6 text-left">
-          <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-1">Meus Últimos Atendimentos</h3>
+        <div className="lg:col-span-2 space-y-6">
+          <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-1 text-left">Meus Últimos Atendimentos</h3>
           <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
             <table className="w-full text-left">
               <thead className="bg-slate-800/50 text-[10px] uppercase font-bold tracking-widest text-slate-400">
@@ -97,14 +97,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, globalUsers, history, setti
                   <th className="px-6 py-4 text-right">Horário</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800 text-left">
+              <tbody className="divide-y divide-slate-800">
                 {displayHistory.map((record) => (
                   <tr key={record.id} className="hover:bg-slate-800/30 transition-all">
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 text-left">
                       <p className="font-bold text-slate-200">{record.customerName}</p>
                       <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">ID: {record.customerId}</p>
                     </td>
-                    <td className="px-6 py-4 text-primary font-black font-mono">{settings.currencySymbol} {record.finalPrice.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-primary font-black font-mono text-left">{settings.currencySymbol} {record.finalPrice.toLocaleString()}</td>
                     <td className="px-6 py-4 text-right text-slate-500 text-xs font-bold">
                       {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
@@ -118,8 +118,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user, globalUsers, history, setti
           </div>
         </div>
 
-        <div className="space-y-6 text-left">
-          <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-1">Ações Rápidas</h3>
+        <div className="space-y-6">
+          <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-1 text-left">Ações Rápidas</h3>
           <div className="flex flex-col gap-3">
             <Link to="/calculator" className="bg-primary hover:opacity-90 text-slate-950 font-black p-6 rounded-2xl transition-all flex items-center justify-between group">
               <span className="uppercase tracking-widest text-xs italic">Nova O.S.</span>
@@ -132,7 +132,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, globalUsers, history, setti
           </div>
 
           {relevantAnnouncements.length > 0 && (
-             <div className="space-y-4 pt-4">
+             <div className="space-y-4 pt-4 text-left">
                 <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-1">Comunicados</h3>
                 <div className="space-y-3">
                    {relevantAnnouncements.map(ann => (
