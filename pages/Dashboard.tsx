@@ -5,6 +5,7 @@ import { User, ServiceRecord, AppSettings, Announcement, WorkSession } from '../
 
 interface DashboardProps {
   user: User;
+  globalUsers: User[];
   history: ServiceRecord[];
   settings: AppSettings;
   announcements?: Announcement[];
@@ -18,7 +19,7 @@ const formatDuration = (ms: number) => {
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
 };
 
-const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announcements = [], workSessions = [] }) => {
+const Dashboard: React.FC<DashboardProps> = ({ user, globalUsers, history, settings, announcements = [], workSessions = [] }) => {
   const [now, setNow] = useState(Date.now());
 
   useEffect(() => {
@@ -40,6 +41,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
 
   const totalRevenue = history.filter(r => r.mechanicId === user.id).reduce((sum, r) => sum + r.finalPrice, 0);
   const totalServices = history.filter(r => r.mechanicId === user.id).length;
+  
+  const currentDbUser = globalUsers.find(u => u.id === user.id);
+  const pendingTax = currentDbUser?.pendingTax || 0;
 
   const calculateTotalTime = (session: WorkSession, currentNow: number) => {
     let total = 0;
@@ -60,11 +64,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
       <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
         <div className="text-left">
           <h2 className="text-2xl font-black text-white uppercase italic tracking-tighter leading-none">{settings.workshopName}</h2>
-          <p className="text-slate-500 text-sm mt-1">Olá, <span className="text-emerald-500 font-bold">{user.name}</span></p>
+          <p className="text-slate-500 text-sm mt-1">Olá, <span className="text-primary font-bold">{user.name}</span></p>
         </div>
         
         {activeSession && (
-          <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 px-4 py-2 rounded-xl flex items-center gap-4">
+          <div className="bg-primary/10 border border-primary/20 text-primary px-4 py-2 rounded-xl flex items-center gap-4">
              <div className="text-right">
                <p className="text-[9px] font-black uppercase tracking-widest opacity-70">Ponto Ativo</p>
                <p className="text-lg font-mono font-black leading-none mt-1">{formatDuration(currentDuration)}</p>
@@ -75,10 +79,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <StatCard title="Faturamento Total" value={`${settings.currencySymbol} ${totalRevenue.toLocaleString()}`} icon="fa-wallet" color="text-emerald-500" />
+        <StatCard title="Faturamento Total" value={`${settings.currencySymbol} ${totalRevenue.toLocaleString()}`} icon="fa-wallet" color="text-primary" />
         <StatCard title="Ordens de Serviços" value={totalServices.toString()} icon="fa-wrench" color="text-blue-500" />
-        <StatCard title="Status do Ponto" value={activeSession ? 'TRABALHANDO' : 'FOLGA'} icon="fa-clock" color={activeSession ? 'text-emerald-400' : 'text-slate-600'} />
-        <StatCard title="Conexão Cloud" value="SUPABASE" icon="fa-database" color="text-emerald-500" />
+        <StatCard title="Status do Ponto" value={activeSession ? 'TRABALHANDO' : 'FOLGA'} icon="fa-clock" color={activeSession ? 'text-primary' : 'text-slate-600'} />
+        <StatCard title="Taxa Pendente" value={`${settings.currencySymbol} ${pendingTax.toLocaleString()}`} icon="fa-hand-holding-dollar" color={pendingTax > 0 ? 'text-red-500' : 'text-primary'} />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -100,7 +104,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
                       <p className="font-bold text-slate-200">{record.customerName}</p>
                       <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">ID: {record.customerId}</p>
                     </td>
-                    <td className="px-6 py-4 text-emerald-500 font-black font-mono text-left">{settings.currencySymbol} {record.finalPrice.toLocaleString()}</td>
+                    <td className="px-6 py-4 text-primary font-black font-mono text-left">{settings.currencySymbol} {record.finalPrice.toLocaleString()}</td>
                     <td className="px-6 py-4 text-right text-slate-500 text-xs font-bold">
                       {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
@@ -117,7 +121,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
         <div className="space-y-6">
           <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest px-1 text-left">Ações Rápidas</h3>
           <div className="flex flex-col gap-3">
-            <Link to="/calculator" className="bg-emerald-500 hover:opacity-90 text-slate-900 font-black p-6 rounded-2xl transition-all flex items-center justify-between group">
+            <Link to="/calculator" className="bg-primary hover:opacity-90 text-slate-950 font-black p-6 rounded-2xl transition-all flex items-center justify-between group">
               <span className="uppercase tracking-widest text-xs italic">Nova O.S.</span>
               <i className="fa-solid fa-plus-circle text-2xl group-hover:rotate-90 transition-all"></i>
             </Link>
