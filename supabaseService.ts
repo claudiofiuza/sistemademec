@@ -6,9 +6,7 @@ const SUPABASE_URL = "https://ubzkyzyahnpfpydwxeja.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViemt5enlhaG5wZnB5ZHd4ZWphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzMzIwMzgsImV4cCI6MjA4NTkwODAzOH0.bsgg5KvOMqYx8YA7Kmg3hhxJvUVuvmzDNClvodsC6pI";
 
 export const saveToSupabase = async (data: any) => {
-  if (!SUPABASE_ANON_KEY || SUPABASE_ANON_KEY.includes("COLE_AQUI")) {
-    return false;
-  }
+  if (!SUPABASE_ANON_KEY) return false;
 
   try {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/storage`, {
@@ -27,11 +25,13 @@ export const saveToSupabase = async (data: any) => {
     });
     return response.ok;
   } catch (e) {
+    console.error("Supabase Save Error:", e);
     return false;
   }
 };
 
 export const fetchFromSupabase = async () => {
+  if (!SUPABASE_ANON_KEY) return null;
   try {
     const response = await fetch(`${SUPABASE_URL}/rest/v1/storage?id=eq.global_state&select=data`, {
       headers: {
@@ -45,6 +45,7 @@ export const fetchFromSupabase = async () => {
     if (!result || result.length === 0) return { _isEmpty: true };
     return result[0].data;
   } catch (e) {
+    console.error("Supabase Fetch Error:", e);
     return null;
   }
 };
