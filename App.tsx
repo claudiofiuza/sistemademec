@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { HashRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
-import { User, Permission, Role, Workshop } from './types';
+import { User, Permission, Workshop } from './types';
 import { INITIAL_USERS, INITIAL_WORKSHOPS, DEFAULT_SETTINGS } from './constants';
 import { fetchFromSupabase, saveToSupabase } from './supabaseService';
 import LoginPage from './pages/Login';
@@ -13,6 +13,16 @@ import CentralControl from './pages/CentralControl';
 import AnnouncementsManager from './pages/AnnouncementsManager';
 import TimeTracker from './pages/TimeTracker';
 import HumanResources from './pages/HumanResources';
+
+// Componente de Proteção de Rota (Fora do App para evitar re-declarações)
+const ProtectedRoute: React.FC<{ children: React.ReactNode, user: User | null, requiredPermission?: Permission, workshop: Workshop | null }> = ({ children, user, requiredPermission, workshop }) => {
+  if (!user) return <Navigate to="/login" replace />;
+  if (requiredPermission && user.workshopId !== 'system') {
+    const role = workshop?.roles.find(r => r.id === user.roleId);
+    if (!role?.permissions.includes(requiredPermission)) return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+};
 
 const usePersistedState = <T,>(key: string, defaultValue: T): [T, React.Dispatch<React.SetStateAction<T>>] => {
   const [state, setState] = useState<T>(() => {
@@ -39,9 +49,9 @@ const App: React.FC = () => {
   const [dbStatus, setDbStatus] = useState<'online' | 'syncing' | 'error' | 'offline'>('offline');
   const [isBooting, setIsBooting] = useState(true);
 
+  // Refs para evitar loops em callbacks
   const workshopsRef = useRef(workshops);
   const usersRef = useRef(globalUsers);
-  
   useEffect(() => { workshopsRef.current = workshops; }, [workshops]);
   useEffect(() => { usersRef.current = globalUsers; }, [globalUsers]);
 
@@ -49,7 +59,7 @@ const App: React.FC = () => {
   const currentWorkshopId = isSuperAdmin ? activeWorkshopId : currentUser?.workshopId || null;
   const workshop = useMemo(() => workshops.find(w => w.id === currentWorkshopId) || null, [workshops, currentWorkshopId]);
 
-  // Update Dynamic Color CSS Variable
+  // Aplicar Cor Primária Globalmente
   useEffect(() => {
     const color = workshop?.settings.primaryColor || DEFAULT_SETTINGS.primaryColor;
     document.documentElement.style.setProperty('--primary-color', color);
@@ -58,32 +68,36 @@ const App: React.FC = () => {
   const syncData = useCallback(async (ws?: Workshop[], us?: User[]) => {
     setIsSyncing(true);
     setDbStatus('syncing');
-    const dataToSave = {
+    const success = await saveToSupabase({
       workshops: ws || workshopsRef.current,
       users: us || usersRef.current,
       ts: Date.now()
-    };
-    const success = await saveToSupabase(dataToSave);
+    });
     setDbStatus(success ? 'online' : 'error');
     setIsSyncing(false);
     return success;
   }, []);
 
   const loadData = useCallback(async () => {
-    const data = await fetchFromSupabase();
-    if (data) {
-      if (data._isEmpty) {
-        setDbStatus('online');
-        await syncData(INITIAL_WORKSHOPS, INITIAL_USERS);
-      } else if (data.workshops && data.users) {
-        setWorkshops(data.workshops);
-        setGlobalUsers(data.users);
-        setDbStatus('online');
+    try {
+      const data = await fetchFromSupabase();
+      if (data) {
+        if (data._isEmpty) {
+          setDbStatus('online');
+          await syncData(INITIAL_WORKSHOPS, INITIAL_USERS);
+        } else if (data.workshops && data.users) {
+          setWorkshops(data.workshops);
+          setGlobalUsers(data.users);
+          setDbStatus('online');
+        }
+      } else {
+        setDbStatus('offline');
       }
-    } else {
-      setDbStatus('offline');
+    } catch (e) {
+      console.error("Boot error:", e);
+    } finally {
+      setIsBooting(false);
     }
-    setIsBooting(false);
   }, [setWorkshops, setGlobalUsers, syncData]);
 
   useEffect(() => {
@@ -101,7 +115,7 @@ const App: React.FC = () => {
   const updateWorkshop = useCallback((updated: Partial<Workshop>) => {
     setWorkshops(prev => {
       const newState = prev.map(w => w.id === currentWorkshopId ? { ...w, ...updated } : w);
-      setTimeout(() => syncData(newState), 100);
+      setTimeout(() => syncData(newState), 200);
       return newState;
     });
   }, [currentWorkshopId, syncData, setWorkshops]);
@@ -120,10 +134,10 @@ const App: React.FC = () => {
   if (isBooting) {
     return (
       <div className="h-screen w-full bg-[#0a0c10] flex flex-col items-center justify-center p-10">
-        <div className="w-16 h-16 rounded-2xl bg-emerald-500 flex items-center justify-center text-slate-900 text-3xl animate-bounce">
+        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center text-slate-900 text-3xl animate-bounce">
           <i className="fa-solid fa-car"></i>
         </div>
-        <p className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.5em] mt-8 animate-pulse text-primary">Sincronizando Sistema...</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.5em] mt-8 animate-pulse text-primary">Sincronizando Supabase...</p>
       </div>
     );
   }
@@ -146,29 +160,29 @@ const App: React.FC = () => {
         <main className="flex-1 overflow-auto bg-[#0a0c10]">
           <Routes>
             <Route path="/login" element={<LoginPage users={globalUsers} workshops={workshops} onLogin={handleLogin} settings={DEFAULT_SETTINGS} />} />
-            <Route path="/central" element={<ProtectedRoute user={currentUser}><CentralControl workshops={workshops} setWorkshops={(ws) => { const res = typeof ws === 'function' ? ws(workshops) : ws; setWorkshops(res); syncData(res); }} users={globalUsers} setUsers={(us) => { const res = typeof us === 'function' ? us(globalUsers) : us; setGlobalUsers(res); syncData(undefined, res); }} currentUser={currentUser} onEnterWorkshop={setActiveWorkshopId} triggerSync={syncData} /></ProtectedRoute>} />
-            <Route path="/" element={<ProtectedRoute user={currentUser}>{workshop ? <Dashboard user={currentUser!} globalUsers={globalUsers} history={workshop.history} settings={workshop.settings} announcements={workshop.announcements} workSessions={workshop.workSessions} /> : <Navigate to="/central" />}</ProtectedRoute>} />
+            
+            <Route path="/central" element={<ProtectedRoute user={currentUser} workshop={workshop}><CentralControl workshops={workshops} setWorkshops={(ws) => { const res = typeof ws === 'function' ? ws(workshops) : ws; setWorkshops(res); syncData(res); }} users={globalUsers} setUsers={(us) => { const res = typeof us === 'function' ? us(globalUsers) : us; setGlobalUsers(res); syncData(undefined, res); }} currentUser={currentUser} onEnterWorkshop={setActiveWorkshopId} triggerSync={syncData} /></ProtectedRoute>} />
+            
+            <Route path="/" element={<ProtectedRoute user={currentUser} workshop={workshop}>{workshop ? <Dashboard user={currentUser!} globalUsers={globalUsers} history={workshop.history} settings={workshop.settings} announcements={workshop.announcements} workSessions={workshop.workSessions} /> : <Navigate to="/central" />}</ProtectedRoute>} />
+            
             <Route path="/calculator" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.USE_CALCULATOR} workshop={workshop}><ServiceCalculator user={currentUser!} parts={workshop?.parts || []} settings={workshop?.settings || DEFAULT_SETTINGS} onSave={(record) => { const updatedHistory = [record, ...(workshop?.history || [])]; updateWorkshop({ history: updatedHistory }); const newUsers = globalUsers.map(u => u.id === record.mechanicId ? { ...u, pendingTax: (u.pendingTax || 0) + record.tax } : u); setGlobalUsers(newUsers); syncData(undefined, newUsers); }} /></ProtectedRoute>} />
+            
             <Route path="/history" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.VIEW_HISTORY} workshop={workshop}><History user={currentUser!} history={workshop?.history || []} settings={workshop?.settings || DEFAULT_SETTINGS} /></ProtectedRoute>} />
+            
             <Route path="/timetracker" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.VIEW_TIME_TRACKER} workshop={workshop}><TimeTracker user={currentUser!} sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} /></ProtectedRoute>} />
+            
             <Route path="/hr" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_TIME_TRACKER} workshop={workshop}><HumanResources sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} users={workshopUsers} setUsers={setGlobalUsers} settings={workshop?.settings || DEFAULT_SETTINGS} workshop={workshop} onUpdateWorkshop={updateWorkshop} currentUser={currentUser} /></ProtectedRoute>} />
+            
             <Route path="/announcements" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_ANNOUNCEMENTS} workshop={workshop}><AnnouncementsManager user={currentUser!} announcements={workshop?.announcements || []} setAnnouncements={(a) => updateWorkshop({ announcements: a })} users={workshopUsers} /></ProtectedRoute>} />
+            
             <Route path="/admin" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_SETTINGS} workshop={workshop}><AdminPanel user={currentUser!} users={workshopUsers} setUsers={(u) => { const res = typeof u === 'function' ? u(workshopUsers) : u; const full = [...globalUsers.filter(gu => gu.workshopId !== currentWorkshopId || gu.workshopId === 'system'), ...res]; setGlobalUsers(full); syncData(undefined, full); }} roles={workshop?.roles || []} setRoles={(r) => updateWorkshop({ roles: typeof r === 'function' ? r(workshop!.roles) : r })} parts={workshop?.parts || []} setParts={(p) => updateWorkshop({ parts: typeof p === 'function' ? p(workshop!.parts) : p })} settings={workshop?.settings || DEFAULT_SETTINGS} setSettings={(s) => updateWorkshop({ settings: typeof s === 'function' ? s(workshop!.settings) : s })} workshopId={currentWorkshopId!} /></ProtectedRoute>} />
+            
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>
       </div>
     </HashRouter>
   );
-};
-
-const ProtectedRoute = ({ children, user, requiredPermission, workshop }: any) => {
-  if (!user) return <Navigate to="/login" replace />;
-  if (requiredPermission && user.workshopId !== 'system') {
-    const role = workshop?.roles.find((r: any) => r.id === user.roleId);
-    if (!role?.permissions.includes(requiredPermission)) return <Navigate to="/" replace />;
-  }
-  return <>{children}</>;
 };
 
 const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopId: string | null, dbStatus: string, onLogout: () => void, onResetContext: () => void, isSyncing: boolean, onManualSync: () => void }> = React.memo(({ user, workshop, activeWorkshopId, dbStatus, onLogout, onResetContext, isSyncing, onManualSync }) => {
