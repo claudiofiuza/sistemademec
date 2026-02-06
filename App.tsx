@@ -14,7 +14,7 @@ import AnnouncementsManager from './pages/AnnouncementsManager';
 import TimeTracker from './pages/TimeTracker';
 import HumanResources from './pages/HumanResources';
 
-// Componente de Proteção de Rota (Fora do App para evitar re-declarações)
+// Componente de Proteção de Rota (Isolado para estabilidade)
 const ProtectedRoute: React.FC<{ children: React.ReactNode, user: User | null, requiredPermission?: Permission, workshop: Workshop | null }> = ({ children, user, requiredPermission, workshop }) => {
   if (!user) return <Navigate to="/login" replace />;
   if (requiredPermission && user.workshopId !== 'system') {
@@ -28,7 +28,8 @@ const usePersistedState = <T,>(key: string, defaultValue: T): [T, React.Dispatch
   const [state, setState] = useState<T>(() => {
     try {
       const stored = localStorage.getItem(key);
-      return stored ? JSON.parse(stored) : defaultValue;
+      if (stored === 'undefined' || stored === null) return defaultValue;
+      return JSON.parse(stored);
     } catch (e) {
       return defaultValue;
     }
@@ -40,16 +41,15 @@ const usePersistedState = <T,>(key: string, defaultValue: T): [T, React.Dispatch
 };
 
 const App: React.FC = () => {
-  const [currentUser, setCurrentUser] = usePersistedState<User | null>('lsc_current_user_v5', null);
-  const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_users_v5', INITIAL_USERS);
-  const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v5', INITIAL_WORKSHOPS);
-  const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_ws_v5', null);
+  const [currentUser, setCurrentUser] = usePersistedState<User | null>('lsc_current_user_v6', null);
+  const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_users_v6', INITIAL_USERS);
+  const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v6', INITIAL_WORKSHOPS);
+  const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_ws_v6', null);
   
   const [isSyncing, setIsSyncing] = useState(false);
   const [dbStatus, setDbStatus] = useState<'online' | 'syncing' | 'error' | 'offline'>('offline');
   const [isBooting, setIsBooting] = useState(true);
 
-  // Refs para evitar loops em callbacks
   const workshopsRef = useRef(workshops);
   const usersRef = useRef(globalUsers);
   useEffect(() => { workshopsRef.current = workshops; }, [workshops]);
@@ -59,7 +59,7 @@ const App: React.FC = () => {
   const currentWorkshopId = isSuperAdmin ? activeWorkshopId : currentUser?.workshopId || null;
   const workshop = useMemo(() => workshops.find(w => w.id === currentWorkshopId) || null, [workshops, currentWorkshopId]);
 
-  // Aplicar Cor Primária Globalmente
+  // Aplicação da cor primária no CSS Root
   useEffect(() => {
     const color = workshop?.settings.primaryColor || DEFAULT_SETTINGS.primaryColor;
     document.documentElement.style.setProperty('--primary-color', color);
@@ -94,7 +94,7 @@ const App: React.FC = () => {
         setDbStatus('offline');
       }
     } catch (e) {
-      console.error("Boot error:", e);
+      console.error("Erro no carregamento:", e);
     } finally {
       setIsBooting(false);
     }
@@ -109,12 +109,12 @@ const App: React.FC = () => {
   }, [loadData]);
 
   const workshopUsers = useMemo(() => 
-    globalUsers.filter(u => u.workshopId === currentWorkshopId && u.workshopId !== 'system'), 
+    (globalUsers || []).filter(u => u.workshopId === currentWorkshopId && u.workshopId !== 'system'), 
   [globalUsers, currentWorkshopId]);
 
   const updateWorkshop = useCallback((updated: Partial<Workshop>) => {
     setWorkshops(prev => {
-      const newState = prev.map(w => w.id === currentWorkshopId ? { ...w, ...updated } : w);
+      const newState = (prev || []).map(w => w.id === currentWorkshopId ? { ...w, ...updated } : w);
       setTimeout(() => syncData(newState), 200);
       return newState;
     });
@@ -134,10 +134,10 @@ const App: React.FC = () => {
   if (isBooting) {
     return (
       <div className="h-screen w-full bg-[#0a0c10] flex flex-col items-center justify-center p-10">
-        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center text-slate-900 text-3xl animate-bounce">
-          <i className="fa-solid fa-car"></i>
+        <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center text-slate-900 text-3xl">
+          <i className="fa-solid fa-car animate-bounce"></i>
         </div>
-        <p className="text-[10px] font-black uppercase tracking-[0.5em] mt-8 animate-pulse text-primary">Sincronizando Supabase...</p>
+        <p className="text-[10px] font-black uppercase tracking-[0.5em] mt-8 text-primary animate-pulse">Sincronizando Sistema...</p>
       </div>
     );
   }
@@ -160,23 +160,14 @@ const App: React.FC = () => {
         <main className="flex-1 overflow-auto bg-[#0a0c10]">
           <Routes>
             <Route path="/login" element={<LoginPage users={globalUsers} workshops={workshops} onLogin={handleLogin} settings={DEFAULT_SETTINGS} />} />
-            
             <Route path="/central" element={<ProtectedRoute user={currentUser} workshop={workshop}><CentralControl workshops={workshops} setWorkshops={(ws) => { const res = typeof ws === 'function' ? ws(workshops) : ws; setWorkshops(res); syncData(res); }} users={globalUsers} setUsers={(us) => { const res = typeof us === 'function' ? us(globalUsers) : us; setGlobalUsers(res); syncData(undefined, res); }} currentUser={currentUser} onEnterWorkshop={setActiveWorkshopId} triggerSync={syncData} /></ProtectedRoute>} />
-            
             <Route path="/" element={<ProtectedRoute user={currentUser} workshop={workshop}>{workshop ? <Dashboard user={currentUser!} globalUsers={globalUsers} history={workshop.history} settings={workshop.settings} announcements={workshop.announcements} workSessions={workshop.workSessions} /> : <Navigate to="/central" />}</ProtectedRoute>} />
-            
             <Route path="/calculator" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.USE_CALCULATOR} workshop={workshop}><ServiceCalculator user={currentUser!} parts={workshop?.parts || []} settings={workshop?.settings || DEFAULT_SETTINGS} onSave={(record) => { const updatedHistory = [record, ...(workshop?.history || [])]; updateWorkshop({ history: updatedHistory }); const newUsers = globalUsers.map(u => u.id === record.mechanicId ? { ...u, pendingTax: (u.pendingTax || 0) + record.tax } : u); setGlobalUsers(newUsers); syncData(undefined, newUsers); }} /></ProtectedRoute>} />
-            
             <Route path="/history" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.VIEW_HISTORY} workshop={workshop}><History user={currentUser!} history={workshop?.history || []} settings={workshop?.settings || DEFAULT_SETTINGS} /></ProtectedRoute>} />
-            
             <Route path="/timetracker" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.VIEW_TIME_TRACKER} workshop={workshop}><TimeTracker user={currentUser!} sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} /></ProtectedRoute>} />
-            
             <Route path="/hr" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_TIME_TRACKER} workshop={workshop}><HumanResources sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} users={workshopUsers} setUsers={setGlobalUsers} settings={workshop?.settings || DEFAULT_SETTINGS} workshop={workshop} onUpdateWorkshop={updateWorkshop} currentUser={currentUser} /></ProtectedRoute>} />
-            
             <Route path="/announcements" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_ANNOUNCEMENTS} workshop={workshop}><AnnouncementsManager user={currentUser!} announcements={workshop?.announcements || []} setAnnouncements={(a) => updateWorkshop({ announcements: a })} users={workshopUsers} /></ProtectedRoute>} />
-            
             <Route path="/admin" element={<ProtectedRoute user={currentUser} requiredPermission={Permission.MANAGE_SETTINGS} workshop={workshop}><AdminPanel user={currentUser!} users={workshopUsers} setUsers={(u) => { const res = typeof u === 'function' ? u(workshopUsers) : u; const full = [...globalUsers.filter(gu => gu.workshopId !== currentWorkshopId || gu.workshopId === 'system'), ...res]; setGlobalUsers(full); syncData(undefined, full); }} roles={workshop?.roles || []} setRoles={(r) => updateWorkshop({ roles: typeof r === 'function' ? r(workshop!.roles) : r })} parts={workshop?.parts || []} setParts={(p) => updateWorkshop({ parts: typeof p === 'function' ? p(workshop!.parts) : p })} settings={workshop?.settings || DEFAULT_SETTINGS} setSettings={(s) => updateWorkshop({ settings: typeof s === 'function' ? s(workshop!.settings) : s })} workshopId={currentWorkshopId!} /></ProtectedRoute>} />
-            
             <Route path="*" element={<Navigate to="/" />} />
           </Routes>
         </main>
@@ -196,7 +187,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
     if (permission && !perms.includes(permission)) return null;
     const active = location.pathname === to;
     return (
-      <Link to={to} className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 ${active ? 'bg-primary/10 text-primary border-l-2 border-primary' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-100'}`}>
+      <Link to={to} className={`flex items-center space-x-3 px-4 py-3 rounded-lg transition-all ${active ? 'bg-primary/10 text-primary border-l-2 border-primary' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-100'}`}>
         <i className={`fa-solid ${icon} w-5 text-center text-sm`}></i>
         <span className="text-xs font-bold uppercase tracking-widest">{label}</span>
       </Link>
@@ -205,7 +196,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
 
   const getStatusColor = () => {
     switch(dbStatus) {
-      case 'online': return 'bg-emerald-500 shadow-[0_0_8px_#10b981]';
+      case 'online': return 'bg-emerald-500 shadow-primary-glow';
       case 'syncing': return 'bg-yellow-500 animate-pulse';
       default: return 'bg-red-500';
     }
@@ -219,7 +210,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
             <i className="fa-solid fa-car"></i>
           </div>
           <div className="overflow-hidden text-left">
-            <h1 className="font-black text-xs text-white uppercase truncate tracking-tight italic leading-none">{workshop?.settings.workshopName || 'ADMIN'}</h1>
+            <h1 className="font-black text-xs text-white uppercase truncate italic leading-none">{workshop?.settings.workshopName || 'ADMIN'}</h1>
             <p className="text-[8px] text-primary font-black uppercase tracking-widest mt-1 opacity-60">SISTEMA ATIVO</p>
           </div>
         </div>
@@ -230,7 +221,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
         )}
       </div>
 
-      <nav className="flex-1 px-3 space-y-1 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 px-3 space-y-1 overflow-y-auto">
         {isSuperAdmin && <NavLink to="/central" icon="fa-microchip" label="Control Center" />}
         {(workshop || (isSuperAdmin && activeWorkshopId)) && (
           <>
@@ -254,7 +245,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
         </button>
         <div className="bg-[#0a0c10] rounded-xl p-3 border border-slate-800">
           <div className="flex items-center justify-between mb-3 px-1">
-             <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Database</span>
+             <span className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Conexão DB</span>
              <div className={`w-2 h-2 rounded-full ${getStatusColor()}`}></div>
           </div>
           <div className="flex items-center space-x-2">
