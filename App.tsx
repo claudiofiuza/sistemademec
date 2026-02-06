@@ -34,7 +34,7 @@ const App: React.FC = () => {
   const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_users_v5', INITIAL_USERS);
   const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v5', INITIAL_WORKSHOPS);
   const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_ws_v5', null);
-  const [dbStatus, setDbStatus] = useState<'online' | 'syncing' | 'error' | 'offline'>('online');
+  const [dbStatus, setDbStatus] = useState<'online' | 'syncing' | 'error' | 'offline'>('offline');
 
   const syncData = useCallback(async (ws?: Workshop[], us?: User[]) => {
     setDbStatus('syncing');
@@ -43,26 +43,30 @@ const App: React.FC = () => {
       users: us || globalUsers,
       ts: Date.now()
     });
-    setDbStatus(success ? 'online' : 'offline');
+    setDbStatus(success ? 'online' : 'error');
   }, [workshops, globalUsers]);
 
   const loadData = useCallback(async () => {
-    try {
-      const data = await fetchFromSupabase();
-      if (data && data.workshops && data.users) {
+    const data = await fetchFromSupabase();
+    
+    if (data) {
+      if (data._isEmpty) {
+        // Banco está online mas vazio. Vamos subir o que temos localmente.
+        setDbStatus('online');
+        syncData();
+      } else if (data.workshops && data.users) {
         setWorkshops(data.workshops);
         setGlobalUsers(data.users);
         setDbStatus('online');
       }
-    } catch (err) {
+    } else {
       setDbStatus('offline');
     }
-  }, [setWorkshops, setGlobalUsers]);
+  }, [setWorkshops, setGlobalUsers, syncData]);
 
-  // Carregamento inicial e auto-sync
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 20000); // Sincroniza a cada 20 segundos
+    const interval = setInterval(loadData, 30000); 
     return () => clearInterval(interval);
   }, [loadData]);
 
