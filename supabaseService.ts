@@ -40,10 +40,17 @@ export const fetchFromSupabase = async () => {
         'Accept': 'application/json'
       }
     });
+    
     if (!response.ok) return null;
+    
     const result = await response.json();
-    if (!result || result.length === 0) return { _isEmpty: true };
-    return result[0].data;
+    
+    // Verifica se é um array e se tem conteúdo
+    if (Array.isArray(result) && result.length > 0) {
+      return result[0].data;
+    }
+    
+    return { _isEmpty: true };
   } catch (e) {
     console.error("Supabase Fetch Error:", e);
     return null;
