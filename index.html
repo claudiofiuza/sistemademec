@@ -12,22 +12,18 @@
         :root {
             --primary-color: #10b981;
         }
-        body { font-family: 'Inter', sans-serif; background-color: #0a0c10; }
+        body { font-family: 'Inter', sans-serif; }
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #475569; }
         
-        /* Utility classes for dynamic colors */
+        /* Tailwind custom primary class using CSS variable */
         .text-primary { color: var(--primary-color) !important; }
         .bg-primary { background-color: var(--primary-color) !important; }
         .border-primary { border-color: var(--primary-color) !important; }
         .ring-primary { --tw-ring-color: var(--primary-color) !important; }
-        .shadow-primary-glow { box-shadow: 0 0 15px -3px var(--primary-color); }
-
-        /* Safe animations (Standard CSS) */
-        .fade-in { animation: fadeIn 0.5s ease-out forwards; }
-        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        .shadow-primary\/20 { --tw-shadow-color: var(--primary-color); shadow-opacity: 0.2; }
     </style>
 <script type="importmap">
 {
@@ -40,8 +36,10 @@
   }
 }
 </script>
+<link rel="stylesheet" href="/index.css">
 </head>
 <body class="h-full overflow-hidden">
     <div id="root" class="h-full"></div>
+<script type="module" src="/index.tsx"></script>
 </body>
 </html>
