@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { HashRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
-import { User, Permission, Role, Part, ServiceRecord, AppSettings, Workshop, Announcement, WorkSession } from './types';
+import { User, Permission, Role, Workshop } from './types';
 import { INITIAL_USERS, INITIAL_WORKSHOPS, DEFAULT_SETTINGS } from './constants';
 import { fetchFromSupabase, saveToSupabase } from './supabaseService';
 import LoginPage from './pages/Login';
@@ -34,7 +34,7 @@ const App: React.FC = () => {
   const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_users_v5', INITIAL_USERS);
   const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v5', INITIAL_WORKSHOPS);
   const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_ws_v5', null);
-  const [dbStatus, setDbStatus] = useState<'online' | 'syncing' | 'error' | 'offline' | 'config_error'>('offline');
+  const [dbStatus, setDbStatus] = useState<'online' | 'syncing' | 'error' | 'offline'>('offline');
 
   const syncData = useCallback(async (ws?: Workshop[], us?: User[]) => {
     setDbStatus('syncing');
@@ -48,12 +48,7 @@ const App: React.FC = () => {
 
   const loadData = useCallback(async () => {
     const data = await fetchFromSupabase();
-    
     if (data) {
-      if (data._isConfigError) {
-        setDbStatus('config_error');
-        return;
-      }
       if (data._isEmpty) {
         setDbStatus('online');
         syncData();
@@ -97,11 +92,11 @@ const App: React.FC = () => {
             onResetContext={() => setActiveWorkshopId(null)}
           />
         )}
-        <main className="flex-1 overflow-auto bg-slate-950/50 backdrop-blur-sm">
+        <main className="flex-1 overflow-auto bg-slate-950/50 backdrop-blur-md">
           <Routes>
             <Route path="/login" element={currentUser ? <Navigate to="/" /> : <LoginPage users={globalUsers} workshops={workshops} onLogin={(u, ws) => { setCurrentUser(u); if(ws) setActiveWorkshopId(ws); else if(u.workshopId !== 'system') setActiveWorkshopId(u.workshopId); }} settings={DEFAULT_SETTINGS} />} />
             <Route path="/central" element={<ProtectedRoute user={currentUser} workshop={workshop}><CentralControl workshops={workshops} setWorkshops={setWorkshops} users={globalUsers} setUsers={setGlobalUsers} currentUser={currentUser} onEnterWorkshop={setActiveWorkshopId} triggerSync={syncData} /></ProtectedRoute>} />
-            <Route path="/" element={<ProtectedRoute user={currentUser} workshop={workshop}>{workshop ? <Dashboard user={currentUser!} history={workshop.history} parts={workshop.parts} settings={workshop.settings} announcements={workshop.announcements} workSessions={workshop.workSessions} /> : <Navigate to="/central" />}</ProtectedRoute>} />
+            <Route path="/" element={<ProtectedRoute user={currentUser} workshop={workshop}>{workshop ? <Dashboard user={currentUser!} history={workshop.history} settings={workshop.settings} announcements={workshop.announcements} workSessions={workshop.workSessions} /> : <Navigate to="/central" />}</ProtectedRoute>} />
             <Route path="/calculator" element={<ProtectedRoute user={currentUser} workshop={workshop} requiredPermission={Permission.USE_CALCULATOR}><ServiceCalculator user={currentUser!} parts={workshop?.parts || []} settings={workshop?.settings || DEFAULT_SETTINGS} onSave={(record) => { const updatedHistory = [record, ...(workshop?.history || [])]; updateWorkshop({ history: updatedHistory }); const newUsers = globalUsers.map(u => u.id === record.mechanicId ? { ...u, pendingTax: (u.pendingTax || 0) + record.tax } : u); setGlobalUsers(newUsers); syncData(undefined, newUsers); }} /></ProtectedRoute>} />
             <Route path="/history" element={<ProtectedRoute user={currentUser} workshop={workshop} requiredPermission={Permission.VIEW_HISTORY}><History user={currentUser!} history={workshop?.history || []} settings={workshop?.settings || DEFAULT_SETTINGS} /></ProtectedRoute>} />
             <Route path="/timetracker" element={<ProtectedRoute user={currentUser} workshop={workshop} requiredPermission={Permission.VIEW_TIME_TRACKER}><TimeTracker user={currentUser!} sessions={workshop?.workSessions || []} onUpdateSessions={(s) => updateWorkshop({ workSessions: s })} /></ProtectedRoute>} />
@@ -127,7 +122,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
     if (permission && !perms.includes(permission)) return null;
     const active = location.pathname === to;
     return (
-      <Link to={to} className={`group flex items-center space-x-3 px-4 py-3.5 rounded-2xl transition-all duration-300 ${active ? 'bg-emerald-500 text-slate-950 font-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'text-slate-400 hover:bg-slate-800 hover:text-slate-100'}`}>
+      <Link to={to} className={`group flex items-center space-x-3 px-4 py-4 rounded-[1.5rem] transition-all duration-300 ${active ? 'bg-emerald-500 text-slate-950 font-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-100'}`}>
         <i className={`fa-solid ${icon} w-5 text-center text-sm ${active ? 'text-slate-950' : 'group-hover:text-emerald-400'}`}></i>
         <span className="text-[10px] uppercase tracking-[0.2em] font-black">{label}</span>
       </Link>
@@ -138,30 +133,20 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
     switch(dbStatus) {
       case 'online': return 'bg-emerald-500 shadow-[0_0_10px_#10b981]';
       case 'syncing': return 'bg-yellow-500 animate-pulse';
-      case 'config_error': return 'bg-orange-500 animate-bounce';
       default: return 'bg-red-500 shadow-[0_0_10px_#ef4444]';
     }
   };
 
-  const getStatusText = () => {
-    switch(dbStatus) {
-      case 'online': return 'Conectado';
-      case 'syncing': return 'Sincronizando...';
-      case 'config_error': return 'Erro de Chave (Ver Console)';
-      default: return 'Desconectado';
-    }
-  };
-
   return (
-    <div className="w-64 bg-slate-900/80 border-r border-slate-800/50 flex flex-col shrink-0">
+    <div className="w-64 bg-slate-900/60 border-r border-slate-800/40 flex flex-col shrink-0 backdrop-blur-xl">
       <div className="p-8">
         <div className="flex items-center space-x-4 mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-slate-950 text-2xl shadow-[0_0_15px_rgba(16,185,129,0.2)]">
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-slate-950 text-2xl shadow-[0_0_20px_rgba(16,185,129,0.2)]">
             <i className="fa-solid fa-car-side"></i>
           </div>
           <div className="overflow-hidden">
-            <h1 className="font-black text-xs text-white uppercase truncate tracking-tight italic">{workshop?.settings.workshopName || (isSuperAdmin ? 'ADMINISTRAÇÃO' : 'LSC PRO')}</h1>
-            <p className="text-[8px] text-emerald-500/60 font-black uppercase tracking-[0.3em] mt-0.5">Terminal V5</p>
+            <h1 className="font-black text-xs text-white uppercase truncate tracking-tight italic leading-none">{workshop?.settings.workshopName || (isSuperAdmin ? 'ADMIN' : 'LSC PRO')}</h1>
+            <p className="text-[8px] text-emerald-500/60 font-black uppercase tracking-[0.3em] mt-1">Terminal V5</p>
           </div>
         </div>
         {isSuperAdmin && activeWorkshopId && (
@@ -171,10 +156,10 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
         )}
       </div>
 
-      <nav className="flex-1 px-4 space-y-1.5 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
         {isSuperAdmin && <NavLink to="/central" icon="fa-microchip" label="Control Center" />}
         
-        {(workshop || (isSuperAdmin && activeWorkshopId)) ? (
+        {(workshop || (isSuperAdmin && activeWorkshopId)) && (
           <>
             <div className="px-4 pt-6 pb-2 text-[8px] font-black text-slate-600 uppercase tracking-[0.4em]">Operacional</div>
             <NavLink to="/" icon="fa-gauge-high" label="Dashboard" />
@@ -183,29 +168,24 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
             <NavLink to="/timetracker" icon="fa-stopwatch" label="Ponto" permission={Permission.VIEW_TIME_TRACKER} />
             
             <div className="px-4 pt-6 pb-2 text-[8px] font-black text-slate-600 uppercase tracking-[0.4em]">Gerenciamento</div>
-            <NavLink to="/hr" icon="fa-users-gear" label="Recursos Humanos" permission={Permission.MANAGE_TIME_TRACKER} />
+            <NavLink to="/hr" icon="fa-users-gear" label="RH & Tesouraria" permission={Permission.MANAGE_TIME_TRACKER} />
             <NavLink to="/announcements" icon="fa-bullhorn" label="Comunicados" permission={Permission.MANAGE_ANNOUNCEMENTS} />
-            <NavLink to="/admin" icon="fa-screwdriver-wrench" label="Configurações" permission={Permission.MANAGE_SETTINGS} />
+            <NavLink to="/admin" icon="fa-screwdriver-wrench" label="Ajustes" permission={Permission.MANAGE_SETTINGS} />
           </>
-        ) : isSuperAdmin && (
-          <div className="p-8 text-center opacity-40">
-             <i className="fa-solid fa-store-slash text-4xl mb-4 block"></i>
-             <p className="text-[9px] font-black uppercase tracking-widest">Selecione uma unidade no menu central</p>
-          </div>
         )}
       </nav>
 
-      <div className="p-6 mt-auto">
-        <div className="bg-slate-950/50 rounded-3xl p-4 border border-slate-800/50">
+      <div className="p-6">
+        <div className="bg-slate-950/50 rounded-[2rem] p-4 border border-slate-800/50 shadow-2xl">
           <div className="flex items-center justify-between mb-4 px-1">
-             <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Status Supabase</span>
-             <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor()}`} title={getStatusText()}></div>
+             <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Database</span>
+             <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor()}`}></div>
           </div>
           <div className="flex items-center space-x-3">
-            <img src={user.avatar} className="w-10 h-10 rounded-2xl border border-slate-800" alt="u" />
+            <img src={user.avatar} className="w-10 h-10 rounded-2xl border border-slate-800 shadow-lg" alt="u" />
             <div className="flex-1 overflow-hidden">
               <p className="text-[11px] font-black text-white uppercase truncate">{user.name}</p>
-              <p className="text-[8px] text-emerald-500 font-bold uppercase truncate tracking-widest">{role?.name || (isSuperAdmin ? 'ROOT' : 'USER')}</p>
+              <p className="text-[8px] text-emerald-500 font-black uppercase truncate tracking-widest mt-0.5">{role?.name || (isSuperAdmin ? 'ROOT' : 'USER')}</p>
             </div>
             <button onClick={onLogout} className="p-2 text-slate-600 hover:text-red-500 transition-colors"><i className="fa-solid fa-power-off text-xs"></i></button>
           </div>
