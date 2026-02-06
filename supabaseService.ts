@@ -1,6 +1,6 @@
 
 // ==========================================
-// CONFIGURAÇÃO SUPABASE - ATIVA
+// CONFIGURAÇÃO SUPABASE - CONEXÃO OFICIAL
 // ==========================================
 const SUPABASE_URL = "https://ubzkyzyahnpfpydwxeja.supabase.co"; 
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InViemt5enlhaG5wZnB5ZHd4ZWphIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzMzIwMzgsImV4cCI6MjA4NTkwODAzOH0.bsgg5KvOMqYx8YA7Kmg3hhxJvUVuvmzDNClvodsC6pI";

@@ -122,72 +122,72 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
     if (permission && !perms.includes(permission)) return null;
     const active = location.pathname === to;
     return (
-      <Link to={to} className={`group flex items-center space-x-3 px-4 py-4 rounded-[1.5rem] transition-all duration-300 ${active ? 'bg-emerald-500 text-slate-950 font-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-100'}`}>
+      <Link to={to} className={`group flex items-center space-x-4 px-5 py-4 rounded-[1.8rem] transition-all duration-300 ${active ? 'bg-emerald-500 text-slate-950 font-black shadow-[0_0_25px_rgba(16,185,129,0.3)] scale-[1.02]' : 'text-slate-400 hover:bg-slate-800/50 hover:text-slate-100'}`}>
         <i className={`fa-solid ${icon} w-5 text-center text-sm ${active ? 'text-slate-950' : 'group-hover:text-emerald-400'}`}></i>
-        <span className="text-[10px] uppercase tracking-[0.2em] font-black">{label}</span>
+        <span className="text-[10px] uppercase tracking-[0.25em] font-black">{label}</span>
       </Link>
     );
   };
 
   const getStatusColor = () => {
     switch(dbStatus) {
-      case 'online': return 'bg-emerald-500 shadow-[0_0_10px_#10b981]';
+      case 'online': return 'bg-emerald-500 shadow-[0_0_12px_#10b981]';
       case 'syncing': return 'bg-yellow-500 animate-pulse';
-      default: return 'bg-red-500 shadow-[0_0_10px_#ef4444]';
+      default: return 'bg-red-500 shadow-[0_0_12px_#ef4444]';
     }
   };
 
   return (
-    <div className="w-64 bg-slate-900/60 border-r border-slate-800/40 flex flex-col shrink-0 backdrop-blur-xl">
-      <div className="p-8">
-        <div className="flex items-center space-x-4 mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-slate-950 text-2xl shadow-[0_0_20px_rgba(16,185,129,0.2)]">
+    <div className="w-72 bg-slate-900/60 border-r border-slate-800/40 flex flex-col shrink-0 backdrop-blur-2xl">
+      <div className="p-10">
+        <div className="flex items-center space-x-4 mb-10">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center text-slate-950 text-2xl shadow-[0_0_20px_rgba(16,185,129,0.3)]">
             <i className="fa-solid fa-car-side"></i>
           </div>
           <div className="overflow-hidden">
-            <h1 className="font-black text-xs text-white uppercase truncate tracking-tight italic leading-none">{workshop?.settings.workshopName || (isSuperAdmin ? 'ADMIN' : 'LSC PRO')}</h1>
-            <p className="text-[8px] text-emerald-500/60 font-black uppercase tracking-[0.3em] mt-1">Terminal V5</p>
+            <h1 className="font-black text-sm text-white uppercase truncate tracking-tight italic leading-none">{workshop?.settings.workshopName || (isSuperAdmin ? 'CENTRAL' : 'LSC PRO')}</h1>
+            <p className="text-[8px] text-emerald-500/60 font-black uppercase tracking-[0.4em] mt-2">Terminal V5.3</p>
           </div>
         </div>
         {isSuperAdmin && activeWorkshopId && (
-          <button onClick={() => { onResetContext(); navigate('/central'); }} className="w-full text-[9px] font-black text-emerald-400 bg-emerald-500/5 py-3 rounded-2xl border border-emerald-500/20 hover:bg-emerald-500 hover:text-slate-950 transition-all uppercase tracking-widest">
-            <i className="fa-solid fa-arrow-left mr-2"></i> CENTRAL
+          <button onClick={() => { onResetContext(); navigate('/central'); }} className="w-full text-[9px] font-black text-emerald-400 bg-emerald-500/10 py-4 rounded-[1.5rem] border border-emerald-500/20 hover:bg-emerald-500 hover:text-slate-950 transition-all uppercase tracking-[0.2em] shadow-lg">
+            <i className="fa-solid fa-arrow-left mr-2"></i> VOLTAR CENTRAL
           </button>
         )}
       </div>
 
-      <nav className="flex-1 px-4 space-y-2 overflow-y-auto custom-scrollbar">
+      <nav className="flex-1 px-5 space-y-2.5 overflow-y-auto custom-scrollbar">
         {isSuperAdmin && <NavLink to="/central" icon="fa-microchip" label="Control Center" />}
         
         {(workshop || (isSuperAdmin && activeWorkshopId)) && (
           <>
-            <div className="px-4 pt-6 pb-2 text-[8px] font-black text-slate-600 uppercase tracking-[0.4em]">Operacional</div>
+            <div className="px-5 pt-8 pb-3 text-[9px] font-black text-slate-600 uppercase tracking-[0.5em] opacity-50">Operacional</div>
             <NavLink to="/" icon="fa-gauge-high" label="Dashboard" />
             <NavLink to="/calculator" icon="fa-calculator" label="Calculadora" permission={Permission.USE_CALCULATOR} />
             <NavLink to="/history" icon="fa-clock-rotate-left" label="Histórico" permission={Permission.VIEW_HISTORY} />
-            <NavLink to="/timetracker" icon="fa-stopwatch" label="Ponto" permission={Permission.VIEW_TIME_TRACKER} />
+            <NavLink to="/timetracker" icon="fa-stopwatch" label="Meu Ponto" permission={Permission.VIEW_TIME_TRACKER} />
             
-            <div className="px-4 pt-6 pb-2 text-[8px] font-black text-slate-600 uppercase tracking-[0.4em]">Gerenciamento</div>
+            <div className="px-5 pt-8 pb-3 text-[9px] font-black text-slate-600 uppercase tracking-[0.5em] opacity-50">Gestão</div>
             <NavLink to="/hr" icon="fa-users-gear" label="RH & Tesouraria" permission={Permission.MANAGE_TIME_TRACKER} />
             <NavLink to="/announcements" icon="fa-bullhorn" label="Comunicados" permission={Permission.MANAGE_ANNOUNCEMENTS} />
-            <NavLink to="/admin" icon="fa-screwdriver-wrench" label="Ajustes" permission={Permission.MANAGE_SETTINGS} />
+            <NavLink to="/admin" icon="fa-screwdriver-wrench" label="Configuração" permission={Permission.MANAGE_SETTINGS} />
           </>
         )}
       </nav>
 
-      <div className="p-6">
-        <div className="bg-slate-950/50 rounded-[2rem] p-4 border border-slate-800/50 shadow-2xl">
-          <div className="flex items-center justify-between mb-4 px-1">
-             <span className="text-[8px] font-black text-slate-600 uppercase tracking-widest">Database</span>
-             <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor()}`}></div>
+      <div className="p-8">
+        <div className="bg-slate-950/50 rounded-[2.5rem] p-5 border border-slate-800/60 shadow-2xl backdrop-blur-md">
+          <div className="flex items-center justify-between mb-5 px-1">
+             <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.4em]">Database Link</span>
+             <div className={`w-3 h-3 rounded-full ${getStatusColor()}`}></div>
           </div>
           <div className="flex items-center space-x-3">
-            <img src={user.avatar} className="w-10 h-10 rounded-2xl border border-slate-800 shadow-lg" alt="u" />
+            <img src={user.avatar} className="w-12 h-12 rounded-[1.2rem] border border-slate-800 shadow-xl bg-slate-900" alt="u" />
             <div className="flex-1 overflow-hidden">
-              <p className="text-[11px] font-black text-white uppercase truncate">{user.name}</p>
-              <p className="text-[8px] text-emerald-500 font-black uppercase truncate tracking-widest mt-0.5">{role?.name || (isSuperAdmin ? 'ROOT' : 'USER')}</p>
+              <p className="text-[12px] font-black text-white uppercase truncate italic">{user.name}</p>
+              <p className="text-[9px] text-emerald-500 font-black uppercase truncate tracking-[0.15em] mt-1">{role?.name || (isSuperAdmin ? 'ROOT' : 'USER')}</p>
             </div>
-            <button onClick={onLogout} className="p-2 text-slate-600 hover:text-red-500 transition-colors"><i className="fa-solid fa-power-off text-xs"></i></button>
+            <button onClick={onLogout} className="p-2.5 text-slate-600 hover:text-red-500 transition-all hover:scale-110"><i className="fa-solid fa-power-off text-sm"></i></button>
           </div>
         </div>
       </div>
