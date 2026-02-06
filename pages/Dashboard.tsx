@@ -56,34 +56,36 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
   const currentDuration = activeSession ? calculateTotalTime(activeSession, now) : 0;
 
   return (
-    <div className="p-10 space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700 max-w-7xl mx-auto">
-      <header className="flex flex-col md:flex-row md:items-end justify-between border-b border-slate-800 pb-10 gap-6">
+    <div className="p-12 space-y-16 animate-in fade-in slide-in-from-bottom-8 duration-700 max-w-7xl mx-auto">
+      <header className="flex flex-col md:flex-row md:items-end justify-between border-b border-slate-800/60 pb-12 gap-8">
         <div>
-          <h2 className="text-4xl font-black text-white uppercase italic tracking-tighter leading-none">{settings.workshopName}</h2>
-          <p className="text-slate-500 text-sm mt-2 font-medium">Logado como <span className="text-emerald-500 font-black">{user.name}</span></p>
+          <h2 className="text-5xl font-black text-white uppercase italic tracking-tighter leading-none">{settings.workshopName}</h2>
+          <p className="text-slate-500 text-lg mt-3 font-medium">Terminal de Acesso: <span className="text-emerald-500 font-black uppercase tracking-widest">{user.name}</span></p>
         </div>
         
         {activeSession && (
-          <div className="bg-emerald-500 text-slate-950 px-8 py-4 rounded-[2rem] flex items-center gap-6 shadow-2xl shadow-emerald-500/20">
-             <div className="text-right border-r border-slate-950/20 pr-6">
-               <p className="text-[10px] font-black uppercase tracking-widest opacity-70">Turno Ativo</p>
-               <p className="text-2xl font-mono font-black leading-none mt-1">{formatDuration(currentDuration)}</p>
+          <div className="bg-emerald-500 text-slate-950 px-10 py-5 rounded-[2.5rem] flex items-center gap-8 shadow-2xl shadow-emerald-500/25 transition-all hover:scale-[1.03]">
+             <div className="text-right border-r border-slate-950/20 pr-8">
+               <p className="text-[11px] font-black uppercase tracking-[0.3em] opacity-70">Sessão em Curso</p>
+               <p className="text-3xl font-mono font-black leading-none mt-1">{formatDuration(currentDuration)}</p>
              </div>
-             <i className="fa-solid fa-stopwatch text-3xl animate-pulse"></i>
+             <i className="fa-solid fa-stopwatch text-4xl animate-pulse"></i>
           </div>
         )}
       </header>
 
       {relevantAnnouncements.length > 0 && (
-        <div className="space-y-6">
-          <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] px-1">Comunicados</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="space-y-8">
+          <h3 className="text-[11px] font-black text-slate-600 uppercase tracking-[0.5em] px-2 flex items-center">
+             <span className="w-8 h-px bg-slate-800 mr-4"></span> Mural de Comunicados
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
             {relevantAnnouncements.map(ann => (
-              <div key={ann.id} className={`p-8 rounded-[2.5rem] border ${ann.type === 'urgent' ? 'bg-red-500/5 border-red-500/20' : 'bg-slate-900/50 border-slate-800'} relative overflow-hidden backdrop-blur-sm group hover:scale-[1.02] transition-all`}>
-                <h4 className={`font-black uppercase italic mb-3 tracking-tight ${ann.type === 'urgent' ? 'text-red-400' : 'text-emerald-500'}`}>{ann.title}</h4>
-                <p className="text-xs text-slate-400 leading-relaxed mb-6 font-medium">{ann.content}</p>
-                <div className="flex items-center justify-between text-[9px] text-slate-600 font-black uppercase tracking-widest border-t border-slate-800 pt-4">
-                  <span>Autor: {ann.authorName}</span>
+              <div key={ann.id} className={`p-10 rounded-[3rem] border ${ann.type === 'urgent' ? 'bg-red-500/5 border-red-500/30' : 'bg-slate-900/60 border-slate-800/80'} relative overflow-hidden backdrop-blur-md group hover:translate-y-[-5px] transition-all duration-300 shadow-xl`}>
+                <h4 className={`font-black uppercase italic mb-4 tracking-tighter text-xl ${ann.type === 'urgent' ? 'text-red-400' : 'text-emerald-500'}`}>{ann.title}</h4>
+                <p className="text-sm text-slate-400 leading-relaxed mb-8 font-medium italic opacity-90">{ann.content}</p>
+                <div className="flex items-center justify-between text-[10px] text-slate-500 font-black uppercase tracking-widest border-t border-slate-800/60 pt-6">
+                  <span className="flex items-center gap-2"><i className="fa-solid fa-user-pen"></i> {ann.authorName}</span>
                   <span>{new Date(ann.timestamp).toLocaleDateString()}</span>
                 </div>
               </div>
@@ -94,64 +96,64 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
         <StatCard title="Faturamento Total" value={`${settings.currencySymbol} ${totalRevenue.toLocaleString()}`} icon="fa-wallet" color="text-emerald-500" />
-        <StatCard title="Ordem de Serviços" value={totalServices.toString()} icon="fa-wrench" color="text-blue-500" />
-        <StatCard title="Status do Ponto" value={activeSession ? 'TRABALHANDO' : 'FOLGA'} icon="fa-clock" color={activeSession ? 'text-emerald-400' : 'text-slate-600'} />
-        <StatCard title="Versão Terminal" value="V5.3 PRO" icon="fa-code-branch" color="text-slate-500" />
+        <StatCard title="Ordens Criadas" value={totalServices.toString()} icon="fa-screwdriver-wrench" color="text-blue-500" />
+        <StatCard title="Status Atual" value={activeSession ? 'EM SERVIÇO' : 'FOLGA'} icon="fa-clock" color={activeSession ? 'text-emerald-400' : 'text-slate-600'} />
+        <StatCard title="Database V5" value="CONECTADO" icon="fa-database" color="text-emerald-500" />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
-        <div className="lg:col-span-2 space-y-6">
-          <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] px-1">Meus Últimos Atendimentos</h3>
-          <div className="bg-slate-900/40 border border-slate-800 rounded-[3rem] overflow-hidden shadow-2xl backdrop-blur-sm">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12 pt-8">
+        <div className="lg:col-span-2 space-y-8">
+          <h3 className="text-[11px] font-black text-slate-600 uppercase tracking-[0.5em] px-2">Meus Últimos Registros</h3>
+          <div className="bg-slate-900/40 border border-slate-800/60 rounded-[3.5rem] overflow-hidden shadow-2xl backdrop-blur-xl">
             <table className="w-full text-left">
-              <thead className="bg-slate-800/50 text-[10px] uppercase font-black tracking-widest text-slate-600">
+              <thead className="bg-slate-800/40 text-[11px] uppercase font-black tracking-widest text-slate-500">
                 <tr>
-                  <th className="px-8 py-6">Cliente</th>
-                  <th className="px-8 py-6">Valor</th>
-                  <th className="px-8 py-6 text-right">Data</th>
+                  <th className="px-10 py-8">Identificação Cliente</th>
+                  <th className="px-10 py-8">Valor Final</th>
+                  <th className="px-10 py-8 text-right">Horário</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/40">
+              <tbody className="divide-y divide-slate-800/30 font-medium">
                 {displayHistory.map((record) => (
-                  <tr key={record.id} className="hover:bg-slate-800/20 transition-all">
-                    <td className="px-8 py-6">
-                      <p className="font-black text-slate-200 uppercase italic tracking-tight">{record.customerName}</p>
-                      <p className="text-[9px] text-slate-600 font-black uppercase tracking-widest mt-0.5">ID: {record.customerId}</p>
+                  <tr key={record.id} className="hover:bg-slate-800/20 transition-all duration-300">
+                    <td className="px-10 py-8">
+                      <p className="font-black text-slate-100 uppercase italic tracking-tighter text-lg">{record.customerName}</p>
+                      <p className="text-[10px] text-slate-600 font-black uppercase tracking-[0.2em] mt-1">Passaporte: {record.customerId}</p>
                     </td>
-                    <td className="px-8 py-6 text-emerald-500 font-black font-mono text-lg">{settings.currencySymbol} {record.finalPrice.toLocaleString()}</td>
-                    <td className="px-8 py-6 text-right text-slate-600 font-mono text-xs font-bold uppercase">
-                      {new Date(record.timestamp).toLocaleDateString()}
+                    <td className="px-10 py-8 text-emerald-500 font-black font-mono text-2xl">{settings.currencySymbol} {record.finalPrice.toLocaleString()}</td>
+                    <td className="px-10 py-8 text-right text-slate-600 font-mono text-xs font-black uppercase">
+                      {new Date(record.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                   </tr>
                 ))}
                 {displayHistory.length === 0 && (
-                  <tr><td colSpan={3} className="px-8 py-20 text-center text-slate-700 italic text-sm font-medium uppercase tracking-widest">Aguardando seu primeiro registro...</td></tr>
+                  <tr><td colSpan={3} className="px-10 py-24 text-center text-slate-700 font-black uppercase tracking-[0.5em] italic">Inicie sua jornada hoje</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         </div>
 
-        <div className="space-y-8">
-          <h3 className="text-[10px] font-black text-slate-500 uppercase tracking-[0.4em] px-1">Terminal de Ações</h3>
-          <div className="flex flex-col gap-4">
-            <Link to="/calculator" className="bg-emerald-500 hover:opacity-90 text-slate-950 font-black p-8 rounded-[2.5rem] transition-all flex items-center justify-between group shadow-xl shadow-emerald-500/10">
+        <div className="space-y-10">
+          <h3 className="text-[11px] font-black text-slate-600 uppercase tracking-[0.5em] px-2">Terminal de Operações</h3>
+          <div className="flex flex-col gap-5">
+            <Link to="/calculator" className="bg-emerald-500 hover:scale-[1.02] text-slate-950 font-black p-10 rounded-[3rem] transition-all flex items-center justify-between group shadow-2xl shadow-emerald-500/15">
               <div className="flex flex-col">
-                <span className="uppercase tracking-[0.2em] text-[10px] opacity-70 mb-1">Operacional</span>
-                <span className="text-xl italic uppercase tracking-tighter">Nova O.S.</span>
+                <span className="uppercase tracking-[0.3em] text-[10px] opacity-70 mb-2 font-bold">Gerar Ordem</span>
+                <span className="text-2xl italic uppercase tracking-tighter">Calculadora</span>
               </div>
-              <i className="fa-solid fa-plus-circle text-3xl group-hover:rotate-90 transition-all"></i>
+              <i className="fa-solid fa-plus-circle text-4xl group-hover:rotate-90 transition-all duration-500"></i>
             </Link>
-            <Link to="/timetracker" className="bg-slate-800 hover:bg-slate-700 text-white font-black p-8 rounded-[2.5rem] transition-all flex items-center justify-between group shadow-xl">
+            <Link to="/timetracker" className="bg-slate-800/80 hover:bg-slate-800 text-white font-black p-10 rounded-[3rem] transition-all flex items-center justify-between group shadow-xl backdrop-blur-md border border-slate-700/50">
                <div className="flex flex-col">
-                <span className="uppercase tracking-[0.2em] text-[10px] opacity-30 mb-1">Jornada</span>
-                <span className="text-xl italic uppercase tracking-tighter">Gerenciar Ponto</span>
+                <span className="uppercase tracking-[0.3em] text-[10px] opacity-40 mb-2">Relógio de Ponto</span>
+                <span className="text-2xl italic uppercase tracking-tighter">Meu Turno</span>
               </div>
-              <i className="fa-solid fa-clock text-3xl opacity-20"></i>
+              <i className="fa-solid fa-clock text-4xl opacity-30 group-hover:opacity-100 transition-all"></i>
             </Link>
-            <div className="p-8 bg-slate-900/50 border border-slate-800 rounded-[2.5rem] text-slate-600 text-[10px] uppercase font-black tracking-[0.2em] text-center leading-relaxed italic opacity-40">
-               LSC PRO Management<br/>
-               The standard of excellence.
+            <div className="p-10 bg-slate-900/50 border border-slate-800/60 rounded-[3rem] text-slate-700 text-[10px] uppercase font-black tracking-[0.4em] text-center leading-loose italic opacity-50 select-none">
+               Los Santos Customs PRO<br/>
+               Premium RP Management System
             </div>
           </div>
         </div>
@@ -161,14 +163,14 @@ const Dashboard: React.FC<DashboardProps> = ({ user, history, settings, announce
 };
 
 const StatCard: React.FC<{ title: string, value: string, icon: string, color: string }> = ({ title, value, icon, color }) => (
-  <div className="bg-slate-900/40 border border-slate-800 p-8 rounded-[2.5rem] shadow-2xl backdrop-blur-sm group hover:border-slate-700 transition-all">
-    <div className="flex items-center justify-between mb-4">
-      <span className="text-slate-500 text-[9px] font-black uppercase tracking-[0.3em]">{title}</span>
-      <div className={`w-10 h-10 rounded-2xl bg-slate-800/50 flex items-center justify-center ${color} shadow-lg`}>
-        <i className={`fa-solid ${icon} text-lg`}></i>
+  <div className="bg-slate-900/40 border border-slate-800/60 p-10 rounded-[3.5rem] shadow-2xl backdrop-blur-xl group hover:border-slate-700 transition-all duration-300">
+    <div className="flex items-center justify-between mb-6">
+      <span className="text-slate-500 text-[10px] font-black uppercase tracking-[0.4em] opacity-80">{title}</span>
+      <div className={`w-14 h-14 rounded-2xl bg-slate-800/40 flex items-center justify-center ${color} shadow-lg transition-all group-hover:scale-110`}>
+        <i className={`fa-solid ${icon} text-2xl`}></i>
       </div>
     </div>
-    <h4 className="text-3xl font-black text-white tracking-tighter italic uppercase">{value}</h4>
+    <h4 className="text-4xl font-black text-white tracking-tighter italic uppercase leading-none">{value}</h4>
   </div>
 );
 

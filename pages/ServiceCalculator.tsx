@@ -21,12 +21,10 @@ const ServiceCalculator: React.FC<CalculatorProps> = ({ user, parts, settings, o
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
-  // Add paste (Ctrl+V) listener
   useEffect(() => {
     const handlePaste = (event: ClipboardEvent) => {
       const items = event.clipboardData?.items;
       if (!items) return;
-
       for (let i = 0; i < items.length; i++) {
         if (items[i].type.indexOf('image') !== -1) {
           const blob = items[i].getAsFile();
@@ -40,115 +38,27 @@ const ServiceCalculator: React.FC<CalculatorProps> = ({ user, parts, settings, o
         }
       }
     };
-
     window.addEventListener('paste', handlePaste);
     return () => window.removeEventListener('paste', handlePaste);
   }, []);
 
-  const freelanceFee = useMemo(() => {
-    return inGameCost * settings.freelanceMultiplier;
-  }, [inGameCost, settings.freelanceMultiplier]);
-
-  const subtotalParts = useMemo(() => {
-    return selectedPartIds.reduce((sum, partId) => {
-      const part = parts.find(p => p.id === partId);
-      return sum + (part ? part.price : 0);
-    }, 0);
-  }, [selectedPartIds, parts]);
-
+  const freelanceFee = useMemo(() => inGameCost * settings.freelanceMultiplier, [inGameCost, settings.freelanceMultiplier]);
+  const subtotalParts = useMemo(() => selectedPartIds.reduce((sum, partId) => sum + (parts.find(p => p.id === partId)?.price || 0), 0), [selectedPartIds, parts]);
   const totalAmount = subtotalParts + freelanceFee;
   const tax = totalAmount * settings.taxRate;
   const finalTotal = totalAmount + tax;
 
   const togglePart = (partId: string) => {
-    setSelectedPartIds(prev => {
-      if (prev.includes(partId)) {
-        return prev.filter(id => id !== partId);
-      }
-      return [...prev, partId];
-    });
+    setSelectedPartIds(prev => prev.includes(partId) ? prev.filter(id => id !== partId) : [...prev, partId]);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => {
-        setScreenshot(reader.result as string);
-      };
+      reader.onloadend = () => setScreenshot(reader.result as string);
       reader.readAsDataURL(file);
     }
-  };
-
-  const sendDiscordWebhook = async (record: ServiceRecord) => {
-    const groupsUsed = new Set<CategoryGroup>();
-    if (record.freelanceFee > 0) {
-      groupsUsed.add('Estetica');
-    }
-
-    record.parts.forEach(p => {
-      const originalPart = parts.find(part => part.id === p.partId);
-      const group = settings.categoryGroups[originalPart?.category || ''] || 'Estetica';
-      groupsUsed.add(group);
-    });
-
-    for (const group of Array.from(groupsUsed)) {
-      const webhookUrl = group === 'Performance' ? settings.performanceWebhook : settings.esteticaWebhook;
-      if (!webhookUrl) continue;
-
-      const groupParts = record.parts.filter(p => {
-        const originalPart = parts.find(part => part.id === p.partId);
-        const g = settings.categoryGroups[originalPart?.category || ''] || 'Estetica';
-        return g === group;
-      });
-
-      const partsDescription = groupParts.map(p => `• ${p.name}`).join('\n');
-      const itemsList = group === 'Estetica' && record.freelanceFee > 0 
-        ? (partsDescription ? `• Mão de Obra Freelance\n${partsDescription}` : `• Mão de Obra Freelance`)
-        : partsDescription;
-
-      const embed = {
-        title: `🛠️ REGISTRO: ${group.toUpperCase()} - ${settings.workshopName}`,
-        description: `Serviço de **${group === 'Performance' ? 'Performance' : 'Estetica'}** finalizado.`,
-        color: group === 'Performance' ? 0x3b82f6 : 0xec4899,
-        fields: [
-          { name: "👤 Cliente", value: `${record.customerName} (ID: ${record.customerId})`, inline: true },
-          { name: "👨‍🔧 Mecânico", value: record.mechanicName, inline: true },
-          { name: "💰 Valor Total", value: `${settings.currencySymbol} ${record.finalPrice.toLocaleString()}`, inline: true },
-          { name: "📦 Itens deste Grupo", value: itemsList || "Somente mão de obra básica." },
-          { name: "📝 Notas", value: record.notes || "Sem observações." }
-        ],
-        footer: { text: `LSC Pro • ${new Date().toLocaleString()}` },
-        timestamp: new Date().toISOString()
-      };
-
-      try {
-        const payload: any = { embeds: [embed] };
-        const formData = new FormData();
-        formData.append('payload_json', JSON.stringify(payload));
-        
-        if (record.screenshot) {
-          const res = await fetch(record.screenshot);
-          const blob = await res.blob();
-          formData.append('file', blob, 'service.png');
-        }
-
-        await fetch(webhookUrl, {
-          method: 'POST',
-          body: formData
-        });
-      } catch (err) {
-        console.error(`Erro ao enviar webhook ${group}:`, err);
-      }
-    }
-  };
-
-  const runAiAnalysis = async () => {
-    if (!screenshot) return;
-    setIsAnalyzing(true);
-    const result = await analyzeServiceScreenshot(screenshot, "Identifique o carro e modificações.");
-    setAiNote(result || '');
-    setIsAnalyzing(false);
   };
 
   const handleSave = async () => {
@@ -172,115 +82,108 @@ const ServiceCalculator: React.FC<CalculatorProps> = ({ user, parts, settings, o
       timestamp: Date.now(),
       notes: aiNote
     };
-
     onSave(record);
-    sendDiscordWebhook(record);
-    
     setShowSuccess(true);
     setTimeout(() => {
       setShowSuccess(false);
-      setCustomerName('');
-      setCustomerId('');
-      setAuthorizedBy('');
-      setInGameCost(0);
-      setSelectedPartIds([]);
-      setScreenshot(null);
-      setAiNote('');
+      setCustomerName(''); setCustomerId(''); setAuthorizedBy('');
+      setInGameCost(0); setSelectedPartIds([]); setScreenshot(null); setAiNote('');
     }, 3000);
   };
 
   return (
-    <div className="p-8 max-w-6xl mx-auto pb-24">
-      <h2 className="text-3xl font-black mb-8 flex items-center text-white uppercase tracking-tighter">
-        <i className="fa-solid fa-calculator mr-4 text-primary"></i>
+    <div className="p-12 max-w-7xl mx-auto pb-32 animate-in fade-in duration-500">
+      <h2 className="text-4xl font-black mb-12 flex items-center text-white uppercase tracking-tighter italic">
+        <i className="fa-solid fa-calculator mr-5 text-emerald-500"></i>
         Nova Ordem de Serviço
       </h2>
 
       {showSuccess && (
-        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-50 animate-bounce">
-          <div className="bg-primary text-slate-950 px-8 py-4 rounded-2xl shadow-2xl font-black flex items-center shadow-primary/30 uppercase tracking-widest text-sm">
-            <i className="fa-solid fa-circle-check mr-2 text-xl"></i>
-            Serviço Registrado!
+        <div className="fixed top-12 left-1/2 -translate-x-1/2 z-50 animate-bounce">
+          <div className="bg-emerald-500 text-slate-950 px-12 py-5 rounded-[2rem] shadow-[0_0_40px_rgba(16,185,129,0.4)] font-black flex items-center uppercase tracking-widest text-sm italic">
+            <i className="fa-solid fa-circle-check mr-3 text-2xl"></i>
+            Registro Efetuado com Sucesso!
           </div>
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-          <section className="bg-slate-900 border border-slate-800 p-8 rounded-[2rem] shadow-sm">
-            <h3 className="text-sm font-black mb-8 flex items-center text-slate-500 uppercase tracking-[0.2em]">
-              <i className="fa-solid fa-user-tag mr-3 text-primary/30"></i>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+        <div className="lg:col-span-2 space-y-12">
+          {/* Cliente */}
+          <section className="bg-slate-900/60 border border-slate-800/80 p-10 rounded-[3rem] shadow-2xl backdrop-blur-md">
+            <h3 className="text-[11px] font-black mb-10 flex items-center text-slate-500 uppercase tracking-[0.4em]">
+              <i className="fa-solid fa-user-tag mr-4 text-emerald-500 opacity-40"></i>
               Identificação do Cliente
             </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">Nome Completo</label>
-                <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white focus:outline-none focus:ring-1 ring-primary transition-all font-bold" placeholder="Cidadão" />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              <div className="space-y-3">
+                <label className="text-[11px] font-black text-slate-600 uppercase tracking-widest ml-2">Nome Completo</label>
+                <input type="text" value={customerName} onChange={e => setCustomerName(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-5 text-white focus:outline-none focus:ring-4 ring-emerald-500/10 transition-all font-bold uppercase italic tracking-tight" placeholder="Cidadão" />
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">ID (Passaporte)</label>
-                <input type="text" value={customerId} onChange={e => setCustomerId(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white focus:outline-none focus:ring-1 ring-primary font-mono transition-all" placeholder="12345" />
+              <div className="space-y-3">
+                <label className="text-[11px] font-black text-slate-600 uppercase tracking-widest ml-2">ID Passaporte</label>
+                <input type="text" value={customerId} onChange={e => setCustomerId(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-5 text-white focus:outline-none focus:ring-4 ring-emerald-500/10 font-mono transition-all" placeholder="00000" />
               </div>
-              <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-600 uppercase tracking-widest ml-1">Autorizador</label>
-                <input type="text" value={authorizedBy} onChange={e => setAuthorizedBy(e.target.value)} className="w-full bg-slate-800 border border-slate-700 rounded-xl p-4 text-white focus:outline-none focus:ring-1 ring-primary transition-all font-bold" placeholder="Cargo Superior" />
+              <div className="space-y-3">
+                <label className="text-[11px] font-black text-slate-600 uppercase tracking-widest ml-2">Autorizador</label>
+                <input type="text" value={authorizedBy} onChange={e => setAuthorizedBy(e.target.value)} className="w-full bg-slate-950 border border-slate-800 rounded-2xl p-5 text-white focus:outline-none focus:ring-4 ring-emerald-500/10 transition-all font-bold uppercase" placeholder="Superior" />
               </div>
             </div>
           </section>
 
-          <section className="bg-slate-900 border border-slate-800 p-8 rounded-[2rem] shadow-sm">
-            <div className="flex items-center justify-between mb-8">
-              <h3 className="text-sm font-black text-slate-500 uppercase tracking-[0.2em] flex items-center">
-                <i className="fa-solid fa-coins mr-3 text-primary/30"></i>
-                Custo de Mão de Obra
+          {/* Mão de Obra */}
+          <section className="bg-slate-900/60 border border-slate-800/80 p-10 rounded-[3rem] shadow-2xl backdrop-blur-md">
+            <div className="flex items-center justify-between mb-10">
+              <h3 className="text-[11px] font-black text-slate-500 uppercase tracking-[0.4em] flex items-center">
+                <i className="fa-solid fa-coins mr-4 text-emerald-500 opacity-40"></i>
+                Custo Base Mechanic
               </h3>
-              <div className="bg-primary/5 text-primary px-3 py-1 rounded-lg text-[10px] font-black uppercase tracking-widest border border-primary/20">
+              <div className="bg-emerald-500/10 text-emerald-500 px-5 py-2 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] border border-emerald-500/20 shadow-lg">
                 MULTIPLICADOR: x{settings.freelanceMultiplier}
               </div>
             </div>
             <div className="relative group">
-              <span className="absolute left-6 top-1/2 -translate-y-1/2 text-slate-600 font-black text-2xl group-focus-within:text-primary transition-colors">{settings.currencySymbol}</span>
-              <input type="number" value={inGameCost || ''} onChange={e => setInGameCost(Number(e.target.value))} className="w-full bg-slate-800 border border-slate-700 rounded-[1.5rem] p-6 pl-16 text-4xl font-mono text-white focus:outline-none focus:ring-2 ring-primary/20 transition-all placeholder:text-slate-800" placeholder="0" />
+              <span className="absolute left-8 top-1/2 -translate-y-1/2 text-slate-700 font-black text-4xl group-focus-within:text-emerald-500 transition-colors italic">{settings.currencySymbol}</span>
+              <input type="number" value={inGameCost || ''} onChange={e => setInGameCost(Number(e.target.value))} className="w-full bg-slate-950 border border-slate-800 rounded-[2.5rem] p-10 pl-24 text-5xl font-mono text-white focus:outline-none focus:ring-4 ring-emerald-500/10 transition-all placeholder:text-slate-900 tracking-tighter" placeholder="0" />
             </div>
           </section>
 
-          <div className="space-y-10">
-            <h3 className="text-xl font-black text-white flex items-center px-4 uppercase tracking-tighter">
-              <i className="fa-solid fa-layer-group mr-4 text-primary"></i>
-              Catálogo Técnico
+          {/* Catálogo */}
+          <div className="space-y-16">
+            <h3 className="text-2xl font-black text-white flex items-center px-4 uppercase tracking-tighter italic">
+              <i className="fa-solid fa-layer-group mr-5 text-emerald-500"></i>
+              Catálogo de Componentes
             </h3>
             
             {settings.categories.map(cat => {
               const catParts = parts.filter(p => p.category === cat);
               if (catParts.length === 0) return null;
-
               return (
-                <div key={cat} className="space-y-5">
-                  <div className="flex items-center space-x-4 px-4">
+                <div key={cat} className="space-y-8">
+                  <div className="flex items-center space-x-6 px-4">
                     <div className="flex flex-col">
-                        <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] leading-none">{cat}</h4>
-                        <span className="text-[8px] font-bold text-slate-600 uppercase mt-1 tracking-tighter">GRUPO: {settings.categoryGroups[cat] || 'Estetica'}</span>
+                        <h4 className="text-[12px] font-black text-emerald-500 uppercase tracking-[0.4em] leading-none italic">{cat}</h4>
+                        <span className="text-[9px] font-black text-slate-700 uppercase mt-2 tracking-widest">{settings.categoryGroups[cat] || 'Geral'}</span>
                     </div>
-                    <div className="h-px bg-slate-800 flex-1"></div>
+                    <div className="h-px bg-slate-800/60 flex-1"></div>
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 px-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 px-2">
                     {catParts.map(part => {
                       const isSelected = selectedPartIds.includes(part.id);
                       return (
                         <div 
                           key={part.id}
                           onClick={() => togglePart(part.id)}
-                          className={`p-6 border-2 rounded-[1.5rem] cursor-pointer transition-all duration-300 flex items-center justify-between group relative overflow-hidden ${
-                            isSelected ? 'bg-primary border-primary shadow-xl shadow-primary/20 scale-[1.02]' : 'bg-slate-900 border-slate-800 hover:border-slate-700'
+                          className={`p-8 border-2 rounded-[2.5rem] cursor-pointer transition-all duration-300 flex items-center justify-between group relative overflow-hidden ${
+                            isSelected ? 'bg-emerald-500 border-emerald-500 shadow-2xl shadow-emerald-500/20 scale-[1.03]' : 'bg-slate-900 border-slate-800/80 hover:border-slate-700'
                           }`}
                         >
-                          {isSelected && <div className="absolute top-0 right-0 w-16 h-16 bg-white/10 rounded-full blur-2xl -mr-8 -mt-8"></div>}
                           <div className="flex-1 relative z-10">
-                            <p className={`font-black text-lg leading-tight uppercase tracking-tight ${isSelected ? 'text-slate-950' : 'text-slate-200'}`}>{part.name}</p>
-                            <p className={`text-xs font-bold mt-1 ${isSelected ? 'text-slate-950/60' : 'text-slate-500'}`}>{settings.currencySymbol} {part.price.toLocaleString()}</p>
+                            <p className={`font-black text-xl leading-none uppercase tracking-tighter italic ${isSelected ? 'text-slate-950' : 'text-slate-100'}`}>{part.name}</p>
+                            <p className={`text-xs font-black mt-2 tracking-widest ${isSelected ? 'text-slate-950/70' : 'text-slate-600'}`}>{settings.currencySymbol} {part.price.toLocaleString()}</p>
                           </div>
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${isSelected ? 'bg-slate-950 text-primary' : 'bg-slate-800 text-slate-600 group-hover:bg-slate-700'}`}>
-                            <i className={`fa-solid ${isSelected ? 'fa-check' : 'fa-plus'} text-xs`}></i>
+                          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center transition-all ${isSelected ? 'bg-slate-950 text-emerald-500 shadow-lg' : 'bg-slate-800 text-slate-700 group-hover:bg-slate-700'}`}>
+                            <i className={`fa-solid ${isSelected ? 'fa-check' : 'fa-plus'} text-sm`}></i>
                           </div>
                         </div>
                       );
@@ -292,73 +195,71 @@ const ServiceCalculator: React.FC<CalculatorProps> = ({ user, parts, settings, o
           </div>
         </div>
 
-        <div className="space-y-6">
-          <section className="bg-slate-900 border border-slate-800 p-8 rounded-[2.5rem] sticky top-8 shadow-2xl overflow-hidden backdrop-blur-xl">
-            <div className="absolute top-0 right-0 w-40 h-40 bg-primary/5 rounded-full blur-[60px] -mr-20 -mt-20"></div>
+        {/* Fatura */}
+        <div className="space-y-8">
+          <section className="bg-slate-900 border border-slate-800/80 p-10 rounded-[3.5rem] sticky top-12 shadow-[0_30px_60px_rgba(0,0,0,0.5)] overflow-hidden backdrop-blur-2xl">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-emerald-500/5 rounded-full blur-[80px] -mr-24 -mt-24 pointer-events-none"></div>
             
-            <h3 className="text-2xl font-black mb-8 tracking-tighter text-white border-b border-slate-800 pb-6 flex items-center uppercase">
-              <i className="fa-solid fa-receipt mr-4 text-primary"></i>
-              Fatura Final
+            <h3 className="text-3xl font-black mb-10 tracking-tighter text-white border-b border-slate-800/60 pb-8 flex items-center uppercase italic">
+              <i className="fa-solid fa-receipt mr-5 text-emerald-500"></i>
+              Resumo O.S.
             </h3>
             
-            <div className="space-y-4 mb-8 min-h-[100px]">
-              <div className="flex justify-between items-center text-xs p-4 bg-slate-800/40 rounded-2xl border border-slate-700/30">
-                <span className="text-slate-400 font-bold uppercase tracking-widest">Mão de Obra</span>
-                <span className="font-mono text-primary font-black">{settings.currencySymbol} {freelanceFee.toLocaleString()}</span>
+            <div className="space-y-5 mb-10">
+              <div className="flex justify-between items-center text-sm p-6 bg-slate-950 border border-slate-800/60 rounded-[1.8rem] shadow-inner">
+                <span className="text-slate-500 font-black uppercase tracking-[0.2em]">Freelance Work</span>
+                <span className="font-mono text-emerald-500 font-black text-lg">{settings.currencySymbol} {freelanceFee.toLocaleString()}</span>
               </div>
               
-              <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+              <div className="space-y-3 max-h-72 overflow-y-auto pr-2 custom-scrollbar">
                 {selectedPartIds.map(partId => {
                   const part = parts.find(p => p.id === partId)!;
                   const isPerf = settings.categoryGroups[part.category] === 'Performance';
                   return (
-                    <div key={partId} className="flex justify-between items-center text-xs p-3 hover:bg-slate-800/30 rounded-xl transition-colors">
-                      <div className="flex items-center gap-3">
-                        <span className={`w-2 h-2 rounded-full ${isPerf ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]' : 'bg-pink-500 shadow-[0_0_8px_rgba(236,72,153,0.5)]'}`}></span>
-                        <span className="text-slate-300 font-bold uppercase tracking-tight">{part.name}</span>
+                    <div key={partId} className="flex justify-between items-center text-xs p-5 hover:bg-slate-800/40 rounded-[1.2rem] transition-all border border-transparent hover:border-slate-800/60 group">
+                      <div className="flex items-center gap-4">
+                        <span className={`w-3 h-3 rounded-full ${isPerf ? 'bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.6)]' : 'bg-pink-500 shadow-[0_0_10px_rgba(236,72,153,0.6)]'}`}></span>
+                        <span className="text-slate-300 font-black uppercase tracking-tight italic group-hover:text-white transition-colors">{part.name}</span>
                       </div>
-                      <span className="font-mono text-slate-400">{settings.currencySymbol} {part.price.toLocaleString()}</span>
+                      <span className="font-mono text-slate-500 font-bold">{settings.currencySymbol} {part.price.toLocaleString()}</span>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            <div className="border-t border-slate-800 pt-8 space-y-3">
-              <div className="flex justify-between text-slate-500 text-[10px] font-black uppercase tracking-widest px-1">
-                <span>Subtotal</span>
+            <div className="border-t border-slate-800/80 pt-10 space-y-4">
+              <div className="flex justify-between text-slate-600 text-[11px] font-black uppercase tracking-[0.3em] px-2">
+                <span>Subtotal Operacional</span>
                 <span className="font-mono">{settings.currencySymbol} {totalAmount.toLocaleString()}</span>
               </div>
-              <div className="flex justify-between text-slate-500 text-[10px] font-black uppercase tracking-widest px-1">
-                <span>Imposto ({settings.taxRate * 100}%)</span>
+              <div className="flex justify-between text-slate-600 text-[11px] font-black uppercase tracking-[0.3em] px-2">
+                <span>Taxa Governamental ({settings.taxRate * 100}%)</span>
                 <span className="font-mono">{settings.currencySymbol} {tax.toLocaleString()}</span>
               </div>
-              <div className="flex justify-between text-4xl font-black text-primary border-t border-slate-800 pt-6 mt-4">
-                <span className="tracking-tighter">TOTAL</span>
+              <div className="flex justify-between text-5xl font-black text-emerald-500 border-t border-slate-800 pt-10 mt-6 shadow-text">
+                <span className="tracking-tighter italic">TOTAL</span>
                 <span className="font-mono tracking-tighter">{settings.currencySymbol}{Math.round(finalTotal).toLocaleString()}</span>
               </div>
             </div>
 
-            <div className="mt-10 space-y-6">
-              <div className="bg-slate-800/20 p-6 rounded-[1.5rem] border border-slate-800">
-                <p className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-4 text-center">Registro de Imagem</p>
+            <div className="mt-12 space-y-8">
+              <div className="bg-slate-950/60 p-8 rounded-[2.5rem] border border-slate-800 shadow-inner">
+                <p className="text-[11px] font-black text-slate-700 uppercase tracking-[0.4em] mb-6 text-center">Registro de Evidência</p>
                 {!screenshot ? (
-                   <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-slate-800 rounded-2xl cursor-pointer hover:bg-slate-800/50 hover:border-primary/20 transition-all group">
-                    <i className="fa-solid fa-camera-retro text-4xl text-slate-700 mb-4 group-hover:scale-110 group-hover:text-primary/50 transition-all"></i>
+                   <label className="flex flex-col items-center justify-center h-56 border-2 border-dashed border-slate-800 rounded-[2rem] cursor-pointer hover:bg-emerald-500/5 hover:border-emerald-500/30 transition-all group">
+                    <i className="fa-solid fa-camera-retro text-5xl text-slate-800 mb-5 group-hover:scale-110 group-hover:text-emerald-500/60 transition-all duration-500"></i>
                     <div className="text-center">
-                      <span className="text-[10px] text-slate-500 font-black uppercase tracking-widest block">Enviar Evidência</span>
-                      <span className="text-[8px] text-slate-600 font-bold uppercase tracking-tighter block mt-1">(Ou pressione Ctrl+V)</span>
+                      <span className="text-[11px] text-slate-600 font-black uppercase tracking-[0.3em] block">Anexar Print</span>
+                      <span className="text-[9px] text-slate-700 font-bold uppercase tracking-widest block mt-2 opacity-60">(CTRL + V)</span>
                     </div>
                     <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
                   </label>
                 ) : (
-                  <div className="relative group rounded-2xl overflow-hidden border border-slate-700 shadow-2xl">
-                    <img src={screenshot} className="w-full h-48 object-cover" alt="service-evidence" />
-                    <div className="absolute inset-0 bg-slate-950/80 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-4">
-                      <button onClick={() => setScreenshot(null)} className="w-12 h-12 bg-red-500 text-white rounded-2xl flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-all"><i className="fa-solid fa-trash-can"></i></button>
-                      <button onClick={runAiAnalysis} disabled={isAnalyzing} className="w-12 h-12 bg-primary text-slate-950 rounded-2xl flex items-center justify-center shadow-lg hover:scale-110 active:scale-95 transition-all disabled:opacity-50">
-                        {isAnalyzing ? <i className="fa-solid fa-spinner animate-spin"></i> : <i className="fa-solid fa-brain"></i>}
-                      </button>
+                  <div className="relative group rounded-[2rem] overflow-hidden border border-slate-800 shadow-2xl">
+                    <img src={screenshot} className="w-full h-56 object-cover transition-all duration-700 group-hover:scale-110" alt="service-evidence" />
+                    <div className="absolute inset-0 bg-slate-950/90 opacity-0 group-hover:opacity-100 transition-all flex items-center justify-center gap-6 backdrop-blur-sm">
+                      <button onClick={() => setScreenshot(null)} className="w-16 h-16 bg-red-500 text-white rounded-[1.5rem] flex items-center justify-center shadow-xl hover:scale-110 active:scale-95 transition-all"><i className="fa-solid fa-trash-can text-xl"></i></button>
                     </div>
                   </div>
                 )}
@@ -367,9 +268,9 @@ const ServiceCalculator: React.FC<CalculatorProps> = ({ user, parts, settings, o
               <button 
                 onClick={handleSave}
                 disabled={(!inGameCost && selectedPartIds.length === 0) || !customerName || !customerId}
-                className="w-full bg-primary hover:opacity-90 text-slate-950 font-black py-6 rounded-[1.5rem] transition-all shadow-2xl shadow-primary/30 disabled:opacity-30 disabled:grayscale disabled:shadow-none uppercase tracking-widest text-sm"
+                className="w-full bg-emerald-500 hover:scale-[1.02] active:scale-95 text-slate-950 font-black py-8 rounded-[2.5rem] transition-all shadow-[0_20px_40px_rgba(16,185,129,0.25)] disabled:opacity-20 disabled:grayscale disabled:shadow-none uppercase tracking-[0.25em] text-xs italic"
               >
-                FINALIZAR ATENDIMENTO
+                AUTORIZAR REGISTRO FINAL
               </button>
             </div>
           </section>
