@@ -9,11 +9,21 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        :root {
+            --primary-color: #10b981;
+        }
         body { font-family: 'Inter', sans-serif; }
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #0f172a; }
         ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
         ::-webkit-scrollbar-thumb:hover { background: #475569; }
+        
+        /* Tailwind custom primary class using CSS variable */
+        .text-primary { color: var(--primary-color) !important; }
+        .bg-primary { background-color: var(--primary-color) !important; }
+        .border-primary { border-color: var(--primary-color) !important; }
+        .ring-primary { --tw-ring-color: var(--primary-color) !important; }
+        .shadow-primary\/20 { --tw-shadow-color: var(--primary-color); shadow-opacity: 0.2; }
     </style>
 <script type="importmap">
 {
@@ -26,10 +36,8 @@
   }
 }
 </script>
-<link rel="stylesheet" href="/index.css">
 </head>
 <body class="h-full overflow-hidden">
     <div id="root" class="h-full"></div>
-<script type="module" src="/index.tsx"></script>
 </body>
 </html>
