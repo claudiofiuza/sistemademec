@@ -34,7 +34,7 @@ const App: React.FC = () => {
   const [globalUsers, setGlobalUsers] = usePersistedState<User[]>('lsc_users_v5', INITIAL_USERS);
   const [workshops, setWorkshops] = usePersistedState<Workshop[]>('lsc_workshops_v5', INITIAL_WORKSHOPS);
   const [activeWorkshopId, setActiveWorkshopId] = usePersistedState<string | null>('lsc_active_ws_v5', null);
-  const [dbStatus, setDbStatus] = useState<'online' | 'syncing' | 'error' | 'offline'>('offline');
+  const [dbStatus, setDbStatus] = useState<'online' | 'syncing' | 'error' | 'offline' | 'config_error'>('offline');
 
   const syncData = useCallback(async (ws?: Workshop[], us?: User[]) => {
     setDbStatus('syncing');
@@ -50,8 +50,11 @@ const App: React.FC = () => {
     const data = await fetchFromSupabase();
     
     if (data) {
+      if (data._isConfigError) {
+        setDbStatus('config_error');
+        return;
+      }
       if (data._isEmpty) {
-        // Banco está online mas vazio. Vamos subir o que temos localmente.
         setDbStatus('online');
         syncData();
       } else if (data.workshops && data.users) {
@@ -131,6 +134,24 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
     );
   };
 
+  const getStatusColor = () => {
+    switch(dbStatus) {
+      case 'online': return 'bg-emerald-500 shadow-[0_0_10px_#10b981]';
+      case 'syncing': return 'bg-yellow-500 animate-pulse';
+      case 'config_error': return 'bg-orange-500 animate-bounce';
+      default: return 'bg-red-500 shadow-[0_0_10px_#ef4444]';
+    }
+  };
+
+  const getStatusText = () => {
+    switch(dbStatus) {
+      case 'online': return 'Conectado';
+      case 'syncing': return 'Sincronizando...';
+      case 'config_error': return 'Erro de Chave (Ver Console)';
+      default: return 'Desconectado';
+    }
+  };
+
   return (
     <div className="w-64 bg-slate-900/80 border-r border-slate-800/50 flex flex-col shrink-0">
       <div className="p-8">
@@ -178,7 +199,7 @@ const Sidebar: React.FC<{ user: User, workshop: Workshop | null, activeWorkshopI
         <div className="bg-slate-950/50 rounded-3xl p-4 border border-slate-800/50">
           <div className="flex items-center justify-between mb-4 px-1">
              <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Status Supabase</span>
-             <div className={`w-2 h-2 rounded-full ${dbStatus === 'online' ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : dbStatus === 'syncing' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500 animate-ping'}`}></div>
+             <div className={`w-2.5 h-2.5 rounded-full ${getStatusColor()}`} title={getStatusText()}></div>
           </div>
           <div className="flex items-center space-x-3">
             <img src={user.avatar} className="w-10 h-10 rounded-2xl border border-slate-800" alt="u" />
